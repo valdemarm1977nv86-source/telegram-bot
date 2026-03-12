@@ -1,19 +1,7 @@
-import asyncio
-import csv
-from datetime import datetime
+import os
+from aiogram import Bot, Dispatcher
 
-from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command
-from aiogram.types import (
-    ReplyKeyboardMarkup,
-    KeyboardButton,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-    FSInputFile
-)
-
-TOKEN = "8624158476:AAGI_5ARKj3jHMMFAIUsrl4OjL87AlP22LY"
-ADMIN_ID = 1584040288
+TOKEN = os.environ.get("BOT_TOKEN")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
@@ -151,3 +139,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
