@@ -1,6 +1,3 @@
-bot.py
-requirements.txt
-description.txt
-photos/
-    1.jpg
-    2.jpg
+aiogram
+aiohttp
+openpyxl
