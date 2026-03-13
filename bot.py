@@ -1,8 +1,11 @@
 import os
 import asyncio
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, FSInputFile, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import Message, FSInputFile, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import CommandStart
+from aiogram.utils.media_group import MediaGroupBuilder
+from openpyxl import Workbook, load_workbook
+from datetime import datetime
 
 TOKEN = os.environ.get("BOT_TOKEN")
 
@@ -13,6 +16,33 @@ dp = Dispatcher()
 
 photo1 = FSInputFile("photo1.jpg")
 photo2 = FSInputFile("photo2.jpg")
+photo3 = FSInputFile("photo3.jpg")
+
+visitors = 0
+sources = {}
+
+excel_file = "leads.xlsx"
+
+
+def save_to_excel(username, phone, source):
+    if not os.path.exists(excel_file):
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["Дата", "Username", "Телефон", "Источник"])
+        wb.save(excel_file)
+
+    wb = load_workbook(excel_file)
+    ws = wb.active
+
+    ws.append([
+        datetime.now().strftime("%Y-%m-%d %H:%M"),
+        username,
+        phone,
+        source
+    ])
+
+    wb.save(excel_file)
+
 
 phone_kb = ReplyKeyboardMarkup(
     keyboard=[
@@ -21,16 +51,29 @@ phone_kb = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-# статистика источников
-sources = {}
+policy_kb = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="📜 Политика обработки данных", callback_data="policy")]
+    ]
+)
+
+models_kb = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="MAX ЭКО 205", callback_data="model205")],
+        [InlineKeyboardButton(text="MAX ЭКО 240", callback_data="model240")]
+    ]
+)
+
 
 @dp.message(CommandStart())
 async def start(message: Message):
 
-    user = message.from_user
-    args = message.text.split()
+    global visitors
 
-    source = "неизвестно"
+    visitors += 1
+
+    args = message.text.split()
+    source = "unknown"
 
     if len(args) > 1:
         source = args[1]
@@ -40,95 +83,142 @@ async def start(message: Message):
 
     sources[source] += 1
 
-    # отчет админу
-    report = f"""
-🚀 Новый посетитель бота
+    await bot.send_message(
+        ADMIN_ID,
+        f"""
+🚀 Новый посетитель
 
-👤 username: @{user.username}
-🆔 id: {user.id}
+👤 @{message.from_user.username}
+ID {message.from_user.id}
 
-📍 источник: {source}
+Источник: {source}
 
-📊 статистика источников:
+Всего посетителей: {visitors}
+
+Статистика источников:
 {sources}
 """
+    )
 
-    await bot.send_message(ADMIN_ID, report)
+    media = MediaGroupBuilder()
+    media.add_photo(photo1)
+    media.add_photo(photo2)
 
-    await message.answer_photo(photo1)
+    await message.answer_media_group(media.build())
 
     text = """
-🛷 САНИ-ВОЛОКУШИ МАКСИХОД
+🛷 САНИ ВОЛОКУШИ МАКСИХОД
 
-Сани-волокуши из высокопрочного пластика низкого давления.
+Сани из высокопрочного пластика низкого давления.
 
 Подходят для:
 
-• зимнего отдыха  
 • охоты  
 • рыбалки  
 • экспедиций  
 • перевозки грузов  
 
 ✅ Есть готовые модели  
-✅ Изготавливаем под заказ  
+✅ Изготавливаем под заказ
 
 ━━━━━━━━━━━━━━
 
-📦 МОДЕЛИ САНЕЙ
+Выберите модель чтобы посмотреть фото и характеристики
+"""
 
-MAX ЭКО 205
+    await message.answer(text, reply_markup=models_kb)
+
+
+@dp.callback_query(F.data == "model205")
+async def model1(callback):
+
+    await callback.message.answer_photo(
+        photo3,
+        caption="""
+🛷 MAX ЭКО 205
 
 Длина: 205 см  
 Ширина по дну: 55 см  
 Ширина в развале: 75 см  
 Высота борта: 27 см  
-Длина дышла: 100 см  
 
-━━━━━━━━━━━━━━
+Подходит для:
 
-📞 Контакты
+✔ рыбалки  
+✔ охоты  
+✔ перевозки груза
+"""
+    )
 
-Telegram: @valdemarnv86  
-Почта: MaxihodNV86@yandex.ru  
+    await callback.message.answer(
+        """
+Если вас заинтересовал товар:
 
-━━━━━━━━━━━━━━
+1️⃣ отправьте номер телефона  
+2️⃣ мы свяжемся с вами
+""",
+        reply_markup=policy_kb
+    )
 
+
+@dp.callback_query(F.data == "policy")
+async def policy(callback):
+
+    text = """
 📜 Политика обработки персональных данных
 
-Отправляя номер телефона ,
+Отправляя номер телефона через данного бота,
 вы даете согласие на обработку персональных данных
-для связи с вами по вопросу покупки товара.
+в соответствии с Федеральным законом №152-ФЗ.
+
+Данные используются исключительно для:
+
+• связи с клиентом  
+• консультации по товару  
+• оформления заказа
+
+Ваши данные не передаются третьим лицам.
 """
 
-    await message.answer(text)
+    await callback.message.answer(text)
 
-    await message.answer_photo(photo2)
-
-    await message.answer(
-        "👇 Нажмите кнопку ниже чтобы оставить номер телефона",
+    await callback.message.answer(
+        "Нажмите кнопку ниже чтобы отправить номер",
         reply_markup=phone_kb
     )
 
 
 @dp.message(F.contact)
-async def contact_handler(message: Message):
+async def contact(message: Message):
 
     phone = message.contact.phone_number
-    user = message.from_user
+    username = message.from_user.username
 
-    text = f"""
+    save_to_excel(username, phone, "telegram")
+
+    await bot.send_message(
+        ADMIN_ID,
+        f"""
 📞 Новая заявка
 
+Username: @{username}
 Телефон: {phone}
-username: @{user.username}
-id: {user.id}
 """
-
-    await bot.send_message(ADMIN_ID, text)
+    )
 
     await message.answer(
-        "✅ Спасибо! Ваша заявка отправлена.\nМы скоро свяжемся с вами."
+        """
+✅ Спасибо за заявку!
+
+Менеджер свяжется с вами в ближайшее время.
+
+Пока можете посмотреть другие модели 👇
+"""
+    )
+
+    await message.answer(
+        "Выберите модель",
+        reply_markup=models_kb
     )
 
 
