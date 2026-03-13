@@ -2,45 +2,63 @@ import os
 import asyncio
 from aiohttp import web
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, FSInputFile, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import CommandStart
 from aiogram.utils.media_group import MediaGroupBuilder
 from openpyxl import Workbook, load_workbook
 from datetime import datetime
 
 TOKEN = os.getenv("BOT_TOKEN")
-
 ADMIN_ID = 1584040288
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# ФОТО
-photo1 = FSInputFile("photo1.jpg")
-photo2 = FSInputFile("photo2.jpg")
-
-# статистика
 visitors = 0
 sources = {}
 
 excel_file = "leads.xlsx"
 
-# клавиатура телефона
 phone_kb = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="📱 Отправить номер телефона", request_contact=True)]
-    ],
+    keyboard=[[KeyboardButton(text="📱 Отправить номер телефона", request_contact=True)]],
     resize_keyboard=True
 )
 
-# кнопка политики
 policy_kb = InlineKeyboardMarkup(
     inline_keyboard=[
         [InlineKeyboardButton(text="📜 Политика обработки данных", callback_data="policy")]
     ]
 )
 
-# сохранение в excel
+
+# загрузка описания
+def load_description():
+
+    if not os.path.exists("description.txt"):
+        return "Описание товара не найдено"
+
+    with open("description.txt", "r", encoding="utf-8") as f:
+        return f.read()
+
+
+# загрузка всех фото из папки
+def load_photos():
+
+    photos = []
+
+    if not os.path.exists("photos"):
+        return photos
+
+    files = sorted(os.listdir("photos"))
+
+    for file in files:
+        if file.endswith(".jpg") or file.endswith(".png"):
+            photos.append(FSInputFile(f"photos/{file}"))
+
+    return photos
+
+
+# excel
 def save_to_excel(username, phone, source):
 
     if not os.path.exists(excel_file):
@@ -62,7 +80,6 @@ def save_to_excel(username, phone, source):
     wb.save(excel_file)
 
 
-# START
 @dp.message(CommandStart())
 async def start(message: Message):
 
@@ -71,7 +88,7 @@ async def start(message: Message):
 
     args = message.text.split()
 
-    source = "неизвестно"
+    source = "unknown"
 
     if len(args) > 1:
         source = args[1]
@@ -81,101 +98,49 @@ async def start(message: Message):
 
     sources[source] += 1
 
-    # отчет админу
     await bot.send_message(
         ADMIN_ID,
-        f"""
-🚀 Новый посетитель
-
-👤 @{message.from_user.username}
-ID: {message.from_user.id}
-
-Источник: {source}
-
-Всего посетителей: {visitors}
-
-Статистика:
-{sources}
-"""
+        f"Новый посетитель @{message.from_user.username}\nИсточник: {source}\nВсего: {visitors}"
     )
 
-    # фото
-    media = MediaGroupBuilder()
-    media.add_photo(photo1)
-    media.add_photo(photo2)
+    photos = load_photos()
 
-    await message.answer_media_group(media.build())
+    if photos:
 
-    text = """
-🛷 САНИ - ВОЛОКУШИ МАКСИХОД
+        media = MediaGroupBuilder()
 
-Сани-волокуши из высокопрочного пластика низкого давления.
+        for p in photos:
+            media.add_photo(p)
 
-Подходят для:
+        await message.answer_media_group(media.build())
 
-• зимнего отдыха  
-• охоты  
-• рыбалки  
-• экспедиций  
-• перевозки грузов  
-
-✅ Есть готовые модели  
-✅ Изготавливаем под заказ  
-
-━━━━━━━━━━━━━━
-
-📞 Контакты
-
-Телефон / Max
-+7 922 447 40 86
-
-
-Email
-MaxihodNV86@yandex.ru
-
-━━━━━━━━━━━━━━
-
-Чтобы узнать цену и наличие
-нажмите кнопку ниже и отправьте номер телефона.
-"""
+    text = load_description()
 
     await message.answer(text)
 
     await message.answer(
-        "👇 Перед отправкой номера можно ознакомиться с политикой обработки данных",
+        "Перед отправкой номера ознакомьтесь с политикой обработки данных",
         reply_markup=policy_kb
     )
 
 
-# политика
 @dp.callback_query(F.data == "policy")
 async def policy(callback):
 
     text = """
-📜 Политика обработки персональных данных
+Политика обработки персональных данных
 
-Отправляя номер телефона через данного бота,
-вы даете согласие на обработку персональных данных
-в соответствии с Федеральным законом №152-ФЗ.
+Отправляя номер телефона вы соглашаетесь на обработку персональных данных
+в соответствии с ФЗ-152.
 
-Данные используются исключительно для:
-
-• связи с клиентом  
-• консультации по товару  
-• оформления заказа  
-
-Ваши данные не передаются третьим лицам.
+Данные используются только для связи с клиентом
+и оформления заказа.
 """
 
     await callback.message.answer(text)
-
-    await callback.message.answer(
-        "👇 Теперь можно отправить номер телефона",
-        reply_markup=phone_kb
-    )
+    await callback.message.answer("Теперь можно отправить номер", reply_markup=phone_kb)
 
 
-# получение телефона
 @dp.message(F.contact)
 async def contact(message: Message):
 
@@ -186,28 +151,19 @@ async def contact(message: Message):
 
     await bot.send_message(
         ADMIN_ID,
-        f"""
-📞 Новая заявка
-
-Username: @{username}
-Телефон: {phone}
-"""
+        f"Новая заявка\n@{username}\nТелефон: {phone}"
     )
 
-    await message.answer(
-        """
-✅ Спасибо за заявку!
-
-Мы свяжемся с вами в ближайшее время.
-"""
-    )
+    await message.answer("Спасибо! Мы свяжемся с вами.")
 
 
-# веб сервер для Render
+# WEB SERVER для Render
 async def handle(request):
-    return web.Response(text="Bot is running")
+    return web.Response(text="Bot running")
+
 
 async def start_web():
+
     app = web.Application()
     app.router.add_get("/", handle)
 
@@ -221,10 +177,12 @@ async def start_web():
 
 
 async def main():
+
     await asyncio.gather(
         dp.start_polling(bot),
         start_web()
     )
+
 
 if __name__ == "__main__":
     asyncio.run(main())
