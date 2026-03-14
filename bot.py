@@ -45,9 +45,7 @@ def load_description():
 def load_photos():
 
     photos = []
-
-    if not os.path.exists("photos"):
-        return photos
+    
 
     files = sorted(os.listdir())
 
