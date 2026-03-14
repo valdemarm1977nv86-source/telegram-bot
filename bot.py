@@ -1,15 +1,40 @@
+
 import os
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
 TOKEN = os.getenv("BOT_TOKEN")
-
 ADMIN_ID = 1584040288
 
 PHOTO1 = "products/01_Maxihod_Sani/1.jpg"
 PHOTO2 = "products/01_Maxihod_Sani/2.jpg"
 DESCRIPTION = "products/01_Maxihod_Sani/description.txt"
 
+
+# -----------------------------
+# HTTP SERVER ДЛЯ RENDER
+# -----------------------------
+
+class Handler(BaseHTTPRequestHandler):
+
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running")
+
+
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), Handler)
+    server.serve_forever()
+
+
+# -----------------------------
+# START
+# -----------------------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -19,6 +44,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
 
         text = open(DESCRIPTION, encoding="utf-8").read()
+
+        # ограничение Telegram
+        text = text[:1000]
 
         with open(PHOTO1, "rb") as p1:
             await update.message.reply_photo(
@@ -35,20 +63,25 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print("PHOTO ERROR:", e)
 
         await update.message.reply_text(
-            "Ошибка загрузки фото товара",
+            text,
             reply_markup=reply_markup
         )
 
+
+# -----------------------------
+# СОГЛАСИЕ
+# -----------------------------
 
 async def consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = """
 📄 Согласие на обработку персональных данных
 
-Нажимая кнопку "Согласен", вы разрешаете обработку
-вашего номера телефона для связи по заявке.
+Нажимая кнопку "Согласен", вы разрешаете
+обработку вашего номера телефона для связи
+по вашей заявке.
 
-Ваши данные не передаются третьим лицам.
+Данные используются только для связи.
 """
 
     keyboard = [[KeyboardButton("✅ Согласен")]]
@@ -59,6 +92,10 @@ async def consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# -----------------------------
+# ТЕЛЕФОН
+# -----------------------------
+
 async def ask_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = [[KeyboardButton("📱 Поделиться номером", request_contact=True)]]
@@ -68,6 +105,10 @@ async def ask_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     )
 
+
+# -----------------------------
+# ПОЛУЧЕНИЕ ЗАЯВКИ
+# -----------------------------
 
 async def get_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -95,6 +136,10 @@ ID: {user.id}
     )
 
 
+# -----------------------------
+# MAIN
+# -----------------------------
+
 def main():
 
     application = Application.builder().token(TOKEN).build()
@@ -118,5 +163,10 @@ def main():
     application.run_polling()
 
 
+# -----------------------------
+
 if __name__ == "__main__":
+
+    threading.Thread(target=run_web).start()
+
     main()
