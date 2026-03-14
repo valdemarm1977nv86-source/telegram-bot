@@ -1,231 +1,293 @@
 import os
+import json
 import asyncio
 from aiohttp import web
-from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters import CommandStart
-from aiogram.utils.media_group import MediaGroupBuilder
-from openpyxl import Workbook, load_workbook
 from datetime import datetime
 
-TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = 1584040288
+from aiogram import Bot, Dispatcher, F
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, FSInputFile
+from aiogram.filters import CommandStart
+
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+
+
+# ---------- CONFIG ----------
+
+with open("config.json","r",encoding="utf-8") as f:
+    config = json.load(f)
+
+TOKEN = config["bot_token"]
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-excel_file = "leads.xlsx"
+user_product = {}
 
-visitors = 0
-sources = {}
-
-# кнопка заявки
-order_kb = ReplyKeyboardMarkup(
-    keyboard=[[KeyboardButton(text="🛒 Оставить заявку")]],
-    resize_keyboard=True
-)
-
-# кнопка отправки номера
-phone_kb = ReplyKeyboardMarkup(
-    keyboard=[[KeyboardButton(text="📱 Отправить номер телефона", request_contact=True)]],
-    resize_keyboard=True
-)
-
-# кнопка политики
-policy_kb = InlineKeyboardMarkup(
-    inline_keyboard=[
-        [InlineKeyboardButton(text="📜 Политика обработки данных", callback_data="policy")]
-    ]
-)
+stats = {}
 
 
-# загрузка описания
-def load_description():
+# ---------- GOOGLE ----------
+
+def connect_google(sheet_name):
 
     try:
-        if not os.path.exists("description.txt"):
-            return "Описание товара не найдено"
 
-        with open("description.txt", "r", encoding="utf-8") as f:
-            return f.read()
+        scope = [
+            "https://spreadsheets.google.com/feeds",
+            "https://www.googleapis.com/auth/drive"
+        ]
+
+        creds = ServiceAccountCredentials.from_json_keyfile_name(
+            "google.json", scope
+        )
+
+        client = gspread.authorize(creds)
+
+        sheet = client.open(sheet_name).sheet1
+
+        return sheet
 
     except Exception as e:
-        print("Description error:", e)
-        return "Ошибка загрузки описания"
+
+        print("Google connect error:",e)
+
+        return None
 
 
-# загрузка фото
-def load_photos():
+def save_lead(product, username, phone):
+
+    try:
+
+        sheet_name = config["products"][product]["google_sheet"]
+
+        sheet = connect_google(sheet_name)
+
+        if sheet:
+
+            sheet.append_row([
+                datetime.now().strftime("%Y-%m-%d %H:%M"),
+                username,
+                phone
+            ])
+
+    except Exception as e:
+
+        print("Save error:",e)
+
+
+# ---------- клавиатура ----------
+
+def product_keyboard():
+
+    buttons = []
+
+    for key,p in config["products"].items():
+
+        buttons.append([KeyboardButton(text=p["name"])])
+
+        stats[p["name"]] = 0
+
+    return ReplyKeyboardMarkup(keyboard=buttons,resize_keyboard=True)
+
+
+phone_kb = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton(text="📱 Отправить номер",request_contact=True)]],
+    resize_keyboard=True
+)
+
+
+# ---------- фото ----------
+
+def load_photos(product):
+
+    path = f"products/{product}/photos"
 
     photos = []
 
     try:
 
-        for file in sorted(os.listdir()):
-            if file.lower().endswith((".jpg", ".jpeg", ".png")):
-                if os.path.isfile(file):
-                    photos.append(FSInputFile(file))
+        if os.path.exists(path):
+
+            for file in sorted(os.listdir(path)):
+
+                if file.endswith((".jpg",".png",".jpeg")):
+
+                    photos.append(FSInputFile(f"{path}/{file}"))
 
     except Exception as e:
-        print("Photo error:", e)
+
+        print("Photo error:",e)
 
     return photos
 
 
-# сохранение лида
-def save_to_excel(username, phone, source):
+# ---------- описание ----------
+
+def load_description(product):
 
     try:
 
-        if not os.path.exists(excel_file):
-            wb = Workbook()
-            ws = wb.active
-            ws.append(["Дата", "Username", "Телефон", "Источник"])
-            wb.save(excel_file)
+        with open(f"products/{product}/description.txt","r",encoding="utf-8") as f:
 
-        wb = load_workbook(excel_file)
-        ws = wb.active
+            return f.read()
 
-        ws.append([
-            datetime.now().strftime("%Y-%m-%d %H:%M"),
-            username,
-            phone,
-            source
-        ])
+    except:
 
-        wb.save(excel_file)
+        return "Описание отсутствует"
 
-    except Exception as e:
-        print("Excel error:", e)
 
+# ---------- START ----------
 
 @dp.message(CommandStart())
 async def start(message: Message):
 
-    global visitors
-    visitors += 1
+    try:
+
+        await message.answer(
+            "Выберите товар:",
+            reply_markup=product_keyboard()
+        )
+
+    except Exception as e:
+
+        print("Start error:",e)
+
+
+# ---------- статистика ----------
+
+@dp.message(F.text == "/stats")
+async def show_stats(message: Message):
+
+    text = "Статистика заявок:\n\n"
+
+    for k,v in stats.items():
+
+        text += f"{k} — {v}\n"
+
+    await message.answer(text)
+
+
+# ---------- выбор товара ----------
+
+@dp.message()
+async def choose_product(message: Message):
 
     try:
 
-        args = message.text.split()
+        for key,p in config["products"].items():
 
-        source = "unknown"
+            if message.text == p["name"]:
 
-        if len(args) > 1:
-            source = args[1]
+                user_product[message.from_user.id] = key
 
-        if source not in sources:
-            sources[source] = 0
+                photos = load_photos(key)
 
-        sources[source] += 1
+                for ph in photos:
 
-        username = message.from_user.username or message.from_user.first_name
+                    await message.answer_photo(ph)
 
-        await bot.send_message(
-            ADMIN_ID,
-            f"Новый посетитель @{username}\nИсточник: {source}\nВсего: {visitors}"
-        )
+                text = load_description(key)
 
-        photos = load_photos()
+                await message.answer(text)
 
-        if photos:
+                await message.answer(
+                    "Оставьте номер телефона",
+                    reply_markup=phone_kb
+                )
 
-            media = MediaGroupBuilder()
-
-            for photo in photos:
-                media.add_photo(photo)
-
-            await message.answer_media_group(media.build())
-
-        text = load_description()
-
-        await message.answer(text, reply_markup=order_kb)
+                return
 
     except Exception as e:
-        print("Start error:", e)
+
+        print("Product error:",e)
 
 
-# кнопка заявки
-@dp.message(F.text == "🛒 Оставить заявку")
-async def order(message: Message):
+# ---------- контакт ----------
 
-    await message.answer(
-        "Перед отправкой номера ознакомьтесь с политикой обработки данных",
-        reply_markup=policy_kb
-    )
-
-
-# политика
-@dp.callback_query(F.data == "policy")
-async def policy(callback):
-
-    text = """
-Политика обработки персональных данных
-
-Отправляя номер телефона вы соглашаетесь
-на обработку персональных данных.
-
-Данные используются только для связи
-и оформления заказа.
-"""
-
-    await callback.message.answer(text)
-    await callback.message.answer("Теперь отправьте номер телефона", reply_markup=phone_kb)
-
-
-# получение контакта
 @dp.message(F.contact)
 async def contact(message: Message):
 
     try:
 
-        phone = message.contact.phone_number
+        user_id = message.from_user.id
 
-        if not phone:
-            await message.answer("Не удалось получить номер.")
+        if user_id not in user_product:
+
             return
+
+        product = user_product[user_id]
+
+        phone = message.contact.phone_number
 
         username = message.from_user.username or message.from_user.first_name
 
-        save_to_excel(username, phone, "telegram")
+        save_lead(product,username,phone)
+
+        product_name = config["products"][product]["name"]
+
+        stats[product_name] += 1
+
+        admin = config["products"][product]["admin_id"]
 
         await bot.send_message(
-            ADMIN_ID,
-            f"Новая заявка\n@{username}\nТелефон: {phone}"
+            admin,
+            f"Новая заявка\nТовар: {product_name}\n@{username}\nТелефон: {phone}"
         )
 
-        await message.answer("Спасибо! Мы свяжемся с вами.")
+        await message.answer("Спасибо! Мы скоро свяжемся с вами.")
 
     except Exception as e:
-        print("Contact error:", e)
+
+        print("Contact error:",e)
 
 
-# WEB SERVER для Render
+# ---------- WEB ----------
+
 async def handle(request):
+
     return web.Response(text="Bot running")
 
 
 async def start_web():
 
     app = web.Application()
-    app.router.add_get("/", handle)
 
-    port = int(os.environ.get("PORT", 10000))
+    app.router.add_get("/",handle)
+
+    port = int(os.environ.get("PORT",10000))
 
     runner = web.AppRunner(app)
+
     await runner.setup()
 
-    site = web.TCPSite(runner, "0.0.0.0", port)
+    site = web.TCPSite(runner,"0.0.0.0",port)
+
     await site.start()
 
 
+# ---------- MAIN ----------
+
 async def main():
 
-    await asyncio.gather(
-        dp.start_polling(bot),
-        start_web()
-    )
+    await bot.delete_webhook(drop_pending_updates=True)
+
+    while True:
+
+        try:
+
+            await asyncio.gather(
+                dp.start_polling(bot),
+                start_web()
+            )
+
+        except Exception as e:
+
+            print("Bot crash:",e)
+
+            await asyncio.sleep(5)
 
 
 if __name__ == "__main__":
+
     asyncio.run(main())
