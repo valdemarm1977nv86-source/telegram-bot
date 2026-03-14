@@ -21,18 +21,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = open(DESCRIPTION, encoding="utf-8").read()
 
-    try:
+   try:
 
-        with open(PHOTO1, "rb") as p1:
-            await update.message.reply_photo(photo=p1, caption=text, reply_markup=reply_markup)
+    with open(PHOTO1, "rb") as p1:
+        await update.message.reply_photo(
+            photo=p1,
+            caption=text,
+            reply_markup=reply_markup
+        )
 
-        with open(PHOTO2, "rb") as p2:
-            await update.message.reply_photo(photo=p2)
+except Exception as e:
 
-    except Exception as e:
+    print("PHOTO1 ERROR:", PHOTO1)
+    print(e)
 
-        print("PHOTO ERROR:", e)
-        await update.message.reply_text(text, reply_markup=reply_markup)
+try:
+
+    with open(PHOTO2, "rb") as p2:
+        await update.message.reply_photo(photo=p2)
+
+except Exception as e:
+
+    print("PHOTO2 ERROR:", PHOTO2)
+    print(e)
 
 
 async def consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
