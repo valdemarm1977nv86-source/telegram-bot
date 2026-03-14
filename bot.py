@@ -1,130 +1,209 @@
-import json
 import os
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+import logging
+import asyncio
+from datetime import datetime
 
-# токен из переменной среды Render
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    ReplyKeyboardMarkup,
+    KeyboardButton
+)
+
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    ContextTypes
+)
+
 TOKEN = os.getenv("BOT_TOKEN")
 
-# загрузка конфигурации
-with open("config.json", "r", encoding="utf-8") as f:
-    config = json.load(f)
+ADMIN_ID = 1584040288
 
-PRODUCTS = config["products"]
+PRODUCT_NAME = "Сани-волокуши MAXIHOD"
+PRODUCT_TEXT = """
+🛷 Сани-волокуши MAXIHOD
 
-# старт
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+Прочные санки для:
 
-    keyboard = []
+• рыбалки
+• охоты
+• перевозки груза
 
-    for product_id, product in PRODUCTS.items():
-        keyboard.append(
-            [InlineKeyboardButton(product["name"], callback_data=product_id)]
-        )
-
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.message.reply_text(
-        "Выберите товар:",
-        reply_markup=reply_markup
-    )
-
-# показать товар
-async def show_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    query = update.callback_query
-    await query.answer()
-
-    product_id = query.data
-    product = PRODUCTS[product_id]
-
-    folder = f"products/{product_id}"
-
-    # описание
-    description_path = os.path.join(folder, "description.txt")
-
-    if os.path.exists(description_path):
-        with open(description_path, "r", encoding="utf-8") as f:
-            description = f.read()
-    else:
-        description = "Описание отсутствует"
-
-    # фото
-    photos = []
-
-    for file in os.listdir(folder):
-        if file.endswith(".jpg") or file.endswith(".png"):
-            photos.append(os.path.join(folder, file))
-
-    photos.sort()
-
-    media = []
-
-    for i, photo in enumerate(photos):
-        if i == 0:
-            media.append(InputMediaPhoto(open(photo, "rb"), caption=description))
-        else:
-            media.append(InputMediaPhoto(open(photo, "rb")))
-
-    if media:
-        await query.message.reply_media_group(media)
-    else:
-        await query.message.reply_text(description)
-
-    keyboard = [
-        [InlineKeyboardButton("📞 Оставить заявку", callback_data=f"order_{product_id}")]
-    ]
-
-    await query.message.reply_text(
-        "Хотите заказать?",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-
-# заказ
-async def order(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    query = update.callback_query
-    await query.answer()
-
-    product_id = query.data.replace("order_", "")
-    product = PRODUCTS[product_id]
-
-    user = query.from_user
-
-    text = f"""
-📦 Новая заявка
-
-Товар: {product["name"]}
-
-Имя: {user.first_name}
-Username: @{user.username}
-
-ID: {user.id}
+📍 Нижневартовск
 """
 
-    await context.bot.send_message(
-        chat_id=product["admin_id"],
-        text=text
-    )
+BOT_LINK = "https://t.me/batrak_sales_bot"
 
-    await query.message.reply_text("✅ Заявка отправлена!")
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
 
-# запуск
-def main():
+groups_file = "groups.txt"
+backup_file = "backup_leads.txt"
 
-    if not TOKEN:
-        print("ERROR: BOT_TOKEN not found")
+
+def save_group(chat_id):
+    try:
+        if not os.path.exists(groups_file):
+            open(groups_file, "w").close()
+
+        with open(groups_file, "r") as f:
+            groups = f.read().splitlines()
+
+        if str(chat_id) not in groups:
+            with open(groups_file, "a") as f:
+                f.write(str(chat_id) + "\n")
+
+    except Exception as e:
+        logging.error(e)
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    try:
+
+        chat = update.effective_chat
+
+        if chat.type in ["group", "supergroup"]:
+            save_group(chat.id)
+            return
+
+        keyboard = [
+            [KeyboardButton("📞 Поделиться номером", request_contact=True)]
+        ]
+
+        reply_markup = ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True
+        )
+
+        await update.message.reply_text(PRODUCT_TEXT)
+
+        await update.message.reply_text(
+            "Чтобы узнать цену — отправьте номер телефона.\n\n"
+            "Отправляя номер вы соглашаетесь на обработку персональных данных.",
+            reply_markup=reply_markup
+        )
+
+    except Exception as e:
+        await notify_admin(context, f"Ошибка start: {e}")
+
+
+async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    try:
+
+        contact = update.message.contact
+        user = update.message.from_user
+
+        phone = contact.phone_number
+
+        text = f"""
+Новая заявка
+
+Товар: {PRODUCT_NAME}
+Имя: {user.first_name}
+Username: @{user.username}
+Телефон: {phone}
+Источник: Telegram
+Дата: {datetime.now()}
+"""
+
+        await context.bot.send_message(ADMIN_ID, text)
+
+        save_backup(text)
+
+        await update.message.reply_text(
+            "Спасибо! Мы скоро свяжемся с вами."
+        )
+
+    except Exception as e:
+        await notify_admin(context, f"Ошибка contact: {e}")
+
+
+def save_backup(text):
+
+    try:
+        with open(backup_file, "a", encoding="utf-8") as f:
+            f.write(text + "\n\n")
+
+    except:
+        pass
+
+
+async def notify_admin(context, text):
+
+    try:
+        await context.bot.send_message(ADMIN_ID, f"⚠️ {text}")
+
+    except:
+        pass
+
+
+async def autopost(context: ContextTypes.DEFAULT_TYPE):
+
+    try:
+
+        if not os.path.exists(groups_file):
+            return
+
+        with open(groups_file) as f:
+            groups = f.read().splitlines()
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔘 Открыть бота", url=BOT_LINK)]
+        ])
+
+        for group in groups:
+
+            try:
+
+                await context.bot.send_message(
+                    chat_id=int(group),
+                    text=PRODUCT_TEXT,
+                    reply_markup=keyboard
+                )
+
+                await asyncio.sleep(15)
+
+            except Exception as e:
+                logging.error(e)
+
+    except Exception as e:
+        await notify_admin(context, f"Ошибка автопостинга: {e}")
+
+
+async def post_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if update.effective_user.id != ADMIN_ID:
         return
 
-    app = Application.builder().token(TOKEN).build()
+    await autopost(context)
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(show_product, pattern="^01_"))
-    app.add_handler(CallbackQueryHandler(order, pattern="^order_"))
+    await update.message.reply_text("Пост отправлен.")
 
-    print("BOT STARTED")
 
-    app.run_polling()
+def main():
+
+    application = Application.builder().token(TOKEN).build()
+
+    application.add_handler(CommandHandler("start", start))
+
+    application.add_handler(CommandHandler("post", post_command))
+
+    application.add_handler(MessageHandler(filters.CONTACT, contact_handler))
+
+    job_queue = application.job_queue
+
+    job_queue.run_repeating(autopost, interval=7200, first=60)
+
+    application.run_polling()
+
 
 if __name__ == "__main__":
     main()
