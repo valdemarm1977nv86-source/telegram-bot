@@ -1,293 +1,130 @@
-import os
 import json
-import asyncio
-from aiohttp import web
-from datetime import datetime
+import os
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, FSInputFile
-from aiogram.filters import CommandStart
+# токен из переменной среды Render
+TOKEN = os.getenv("BOT_TOKEN")
 
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-
-
-# ---------- CONFIG ----------
-
-with open("config.json","r",encoding="utf-8") as f:
+# загрузка конфигурации
+with open("config.json", "r", encoding="utf-8") as f:
     config = json.load(f)
 
-TOKEN = config["bot_token"]
+PRODUCTS = config["products"]
 
-bot = Bot(token=TOKEN)
-dp = Dispatcher()
+# старт
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-user_product = {}
+    keyboard = []
 
-stats = {}
-
-
-# ---------- GOOGLE ----------
-
-def connect_google(sheet_name):
-
-    try:
-
-        scope = [
-            "https://spreadsheets.google.com/feeds",
-            "https://www.googleapis.com/auth/drive"
-        ]
-
-        creds = ServiceAccountCredentials.from_json_keyfile_name(
-            "google.json", scope
+    for product_id, product in PRODUCTS.items():
+        keyboard.append(
+            [InlineKeyboardButton(product["name"], callback_data=product_id)]
         )
 
-        client = gspread.authorize(creds)
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
-        sheet = client.open(sheet_name).sheet1
+    await update.message.reply_text(
+        "Выберите товар:",
+        reply_markup=reply_markup
+    )
 
-        return sheet
+# показать товар
+async def show_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    except Exception as e:
+    query = update.callback_query
+    await query.answer()
 
-        print("Google connect error:",e)
+    product_id = query.data
+    product = PRODUCTS[product_id]
 
-        return None
+    folder = f"products/{product_id}"
 
+    # описание
+    description_path = os.path.join(folder, "description.txt")
 
-def save_lead(product, username, phone):
+    if os.path.exists(description_path):
+        with open(description_path, "r", encoding="utf-8") as f:
+            description = f.read()
+    else:
+        description = "Описание отсутствует"
 
-    try:
-
-        sheet_name = config["products"][product]["google_sheet"]
-
-        sheet = connect_google(sheet_name)
-
-        if sheet:
-
-            sheet.append_row([
-                datetime.now().strftime("%Y-%m-%d %H:%M"),
-                username,
-                phone
-            ])
-
-    except Exception as e:
-
-        print("Save error:",e)
-
-
-# ---------- клавиатура ----------
-
-def product_keyboard():
-
-    buttons = []
-
-    for key,p in config["products"].items():
-
-        buttons.append([KeyboardButton(text=p["name"])])
-
-        stats[p["name"]] = 0
-
-    return ReplyKeyboardMarkup(keyboard=buttons,resize_keyboard=True)
-
-
-phone_kb = ReplyKeyboardMarkup(
-    keyboard=[[KeyboardButton(text="📱 Отправить номер",request_contact=True)]],
-    resize_keyboard=True
-)
-
-
-# ---------- фото ----------
-
-def load_photos(product):
-
-    path = f"products/{product}/photos"
-
+    # фото
     photos = []
 
-    try:
+    for file in os.listdir(folder):
+        if file.endswith(".jpg") or file.endswith(".png"):
+            photos.append(os.path.join(folder, file))
 
-        if os.path.exists(path):
+    photos.sort()
 
-            for file in sorted(os.listdir(path)):
+    media = []
 
-                if file.endswith((".jpg",".png",".jpeg")):
+    for i, photo in enumerate(photos):
+        if i == 0:
+            media.append(InputMediaPhoto(open(photo, "rb"), caption=description))
+        else:
+            media.append(InputMediaPhoto(open(photo, "rb")))
 
-                    photos.append(FSInputFile(f"{path}/{file}"))
+    if media:
+        await query.message.reply_media_group(media)
+    else:
+        await query.message.reply_text(description)
 
-    except Exception as e:
+    keyboard = [
+        [InlineKeyboardButton("📞 Оставить заявку", callback_data=f"order_{product_id}")]
+    ]
 
-        print("Photo error:",e)
+    await query.message.reply_text(
+        "Хотите заказать?",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
-    return photos
+# заказ
+async def order(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
+    query = update.callback_query
+    await query.answer()
 
-# ---------- описание ----------
+    product_id = query.data.replace("order_", "")
+    product = PRODUCTS[product_id]
 
-def load_description(product):
+    user = query.from_user
 
-    try:
+    text = f"""
+📦 Новая заявка
 
-        with open(f"products/{product}/description.txt","r",encoding="utf-8") as f:
+Товар: {product["name"]}
 
-            return f.read()
+Имя: {user.first_name}
+Username: @{user.username}
 
-    except:
+ID: {user.id}
+"""
 
-        return "Описание отсутствует"
+    await context.bot.send_message(
+        chat_id=product["admin_id"],
+        text=text
+    )
 
+    await query.message.reply_text("✅ Заявка отправлена!")
 
-# ---------- START ----------
+# запуск
+def main():
 
-@dp.message(CommandStart())
-async def start(message: Message):
+    if not TOKEN:
+        print("ERROR: BOT_TOKEN not found")
+        return
 
-    try:
+    app = Application.builder().token(TOKEN).build()
 
-        await message.answer(
-            "Выберите товар:",
-            reply_markup=product_keyboard()
-        )
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(show_product, pattern="^01_"))
+    app.add_handler(CallbackQueryHandler(order, pattern="^order_"))
 
-    except Exception as e:
+    print("BOT STARTED")
 
-        print("Start error:",e)
-
-
-# ---------- статистика ----------
-
-@dp.message(F.text == "/stats")
-async def show_stats(message: Message):
-
-    text = "Статистика заявок:\n\n"
-
-    for k,v in stats.items():
-
-        text += f"{k} — {v}\n"
-
-    await message.answer(text)
-
-
-# ---------- выбор товара ----------
-
-@dp.message()
-async def choose_product(message: Message):
-
-    try:
-
-        for key,p in config["products"].items():
-
-            if message.text == p["name"]:
-
-                user_product[message.from_user.id] = key
-
-                photos = load_photos(key)
-
-                for ph in photos:
-
-                    await message.answer_photo(ph)
-
-                text = load_description(key)
-
-                await message.answer(text)
-
-                await message.answer(
-                    "Оставьте номер телефона",
-                    reply_markup=phone_kb
-                )
-
-                return
-
-    except Exception as e:
-
-        print("Product error:",e)
-
-
-# ---------- контакт ----------
-
-@dp.message(F.contact)
-async def contact(message: Message):
-
-    try:
-
-        user_id = message.from_user.id
-
-        if user_id not in user_product:
-
-            return
-
-        product = user_product[user_id]
-
-        phone = message.contact.phone_number
-
-        username = message.from_user.username or message.from_user.first_name
-
-        save_lead(product,username,phone)
-
-        product_name = config["products"][product]["name"]
-
-        stats[product_name] += 1
-
-        admin = config["products"][product]["admin_id"]
-
-        await bot.send_message(
-            admin,
-            f"Новая заявка\nТовар: {product_name}\n@{username}\nТелефон: {phone}"
-        )
-
-        await message.answer("Спасибо! Мы скоро свяжемся с вами.")
-
-    except Exception as e:
-
-        print("Contact error:",e)
-
-
-# ---------- WEB ----------
-
-async def handle(request):
-
-    return web.Response(text="Bot running")
-
-
-async def start_web():
-
-    app = web.Application()
-
-    app.router.add_get("/",handle)
-
-    port = int(os.environ.get("PORT",10000))
-
-    runner = web.AppRunner(app)
-
-    await runner.setup()
-
-    site = web.TCPSite(runner,"0.0.0.0",port)
-
-    await site.start()
-
-
-# ---------- MAIN ----------
-
-async def main():
-
-    await bot.delete_webhook(drop_pending_updates=True)
-
-    while True:
-
-        try:
-
-            await asyncio.gather(
-                dp.start_polling(bot),
-                start_web()
-            )
-
-        except Exception as e:
-
-            print("Bot crash:",e)
-
-            await asyncio.sleep(5)
-
+    app.run_polling()
 
 if __name__ == "__main__":
-
-    asyncio.run(main())
+    main()
