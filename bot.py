@@ -49,11 +49,11 @@ def load_photos():
     if not os.path.exists("photos"):
         return photos
 
-    files = sorted(os.listdir("photos"))
+    files = sorted(os.listdir())
 
     for file in files:
         if file.endswith(".jpg") or file.endswith(".png"):
-            photos.append(FSInputFile(f"photos/{file}"))
+            photos.append(FSInputFile(file))
 
     return photos
 
