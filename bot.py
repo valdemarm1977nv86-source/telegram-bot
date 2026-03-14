@@ -14,16 +14,24 @@ ADMIN_ID = 1584040288
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
+excel_file = "leads.xlsx"
+
 visitors = 0
 sources = {}
 
-excel_file = "leads.xlsx"
+# кнопка заявки
+order_kb = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton(text="🛒 Оставить заявку")]],
+    resize_keyboard=True
+)
 
+# кнопка отправки номера
 phone_kb = ReplyKeyboardMarkup(
     keyboard=[[KeyboardButton(text="📱 Отправить номер телефона", request_contact=True)]],
     resize_keyboard=True
 )
 
+# кнопка политики
 policy_kb = InlineKeyboardMarkup(
     inline_keyboard=[
         [InlineKeyboardButton(text="📜 Политика обработки данных", callback_data="policy")]
@@ -34,48 +42,61 @@ policy_kb = InlineKeyboardMarkup(
 # загрузка описания
 def load_description():
 
-    if not os.path.exists("description.txt"):
-        return "Описание товара не найдено"
+    try:
+        if not os.path.exists("description.txt"):
+            return "Описание товара не найдено"
 
-    with open("description.txt", "r", encoding="utf-8") as f:
-        return f.read()
+        with open("description.txt", "r", encoding="utf-8") as f:
+            return f.read()
+
+    except Exception as e:
+        print("Description error:", e)
+        return "Ошибка загрузки описания"
 
 
-# загрузка всех фото из папки
+# загрузка фото
 def load_photos():
 
     photos = []
-    
 
-    files = sorted(os.listdir())
+    try:
 
-    for file in files:
-        if file.endswith(".jpg") or file.endswith(".png"):
-            photos.append(FSInputFile(file))
+        for file in sorted(os.listdir()):
+            if file.lower().endswith((".jpg", ".jpeg", ".png")):
+                if os.path.isfile(file):
+                    photos.append(FSInputFile(file))
+
+    except Exception as e:
+        print("Photo error:", e)
 
     return photos
 
 
-# excel
+# сохранение лида
 def save_to_excel(username, phone, source):
 
-    if not os.path.exists(excel_file):
-        wb = Workbook()
+    try:
+
+        if not os.path.exists(excel_file):
+            wb = Workbook()
+            ws = wb.active
+            ws.append(["Дата", "Username", "Телефон", "Источник"])
+            wb.save(excel_file)
+
+        wb = load_workbook(excel_file)
         ws = wb.active
-        ws.append(["Дата", "Username", "Телефон", "Источник"])
+
+        ws.append([
+            datetime.now().strftime("%Y-%m-%d %H:%M"),
+            username,
+            phone,
+            source
+        ])
+
         wb.save(excel_file)
 
-    wb = load_workbook(excel_file)
-    ws = wb.active
-
-    ws.append([
-        datetime.now().strftime("%Y-%m-%d %H:%M"),
-        username,
-        phone,
-        source
-    ])
-
-    wb.save(excel_file)
+    except Exception as e:
+        print("Excel error:", e)
 
 
 @dp.message(CommandStart())
@@ -84,37 +105,49 @@ async def start(message: Message):
     global visitors
     visitors += 1
 
-    args = message.text.split()
+    try:
 
-    source = "unknown"
+        args = message.text.split()
 
-    if len(args) > 1:
-        source = args[1]
+        source = "unknown"
 
-    if source not in sources:
-        sources[source] = 0
+        if len(args) > 1:
+            source = args[1]
 
-    sources[source] += 1
+        if source not in sources:
+            sources[source] = 0
 
-    await bot.send_message(
-        ADMIN_ID,
-        f"Новый посетитель @{message.from_user.username}\nИсточник: {source}\nВсего: {visitors}"
-    )
+        sources[source] += 1
 
-    photos = load_photos()
+        username = message.from_user.username or message.from_user.first_name
 
-    if photos:
+        await bot.send_message(
+            ADMIN_ID,
+            f"Новый посетитель @{username}\nИсточник: {source}\nВсего: {visitors}"
+        )
 
-        media = MediaGroupBuilder()
+        photos = load_photos()
 
-        for p in photos:
-            media.add_photo(p)
+        if photos:
 
-        await message.answer_media_group(media.build())
+            media = MediaGroupBuilder()
 
-    text = load_description()
+            for photo in photos:
+                media.add_photo(photo)
 
-    await message.answer(text)
+            await message.answer_media_group(media.build())
+
+        text = load_description()
+
+        await message.answer(text, reply_markup=order_kb)
+
+    except Exception as e:
+        print("Start error:", e)
+
+
+# кнопка заявки
+@dp.message(F.text == "🛒 Оставить заявку")
+async def order(message: Message):
 
     await message.answer(
         "Перед отправкой номера ознакомьтесь с политикой обработки данных",
@@ -122,37 +155,49 @@ async def start(message: Message):
     )
 
 
+# политика
 @dp.callback_query(F.data == "policy")
 async def policy(callback):
 
     text = """
 Политика обработки персональных данных
 
-Отправляя номер телефона вы соглашаетесь на обработку персональных данных
-в соответствии с ФЗ-152.
+Отправляя номер телефона вы соглашаетесь
+на обработку персональных данных.
 
-Данные используются только для связи с клиентом
+Данные используются только для связи
 и оформления заказа.
 """
 
     await callback.message.answer(text)
-    await callback.message.answer("Теперь можно отправить номер", reply_markup=phone_kb)
+    await callback.message.answer("Теперь отправьте номер телефона", reply_markup=phone_kb)
 
 
+# получение контакта
 @dp.message(F.contact)
 async def contact(message: Message):
 
-    phone = message.contact.phone_number
-    username = message.from_user.username
+    try:
 
-    save_to_excel(username, phone, "telegram")
+        phone = message.contact.phone_number
 
-    await bot.send_message(
-        ADMIN_ID,
-        f"Новая заявка\n@{username}\nТелефон: {phone}"
-    )
+        if not phone:
+            await message.answer("Не удалось получить номер.")
+            return
 
-    await message.answer("Спасибо! Мы свяжемся с вами.")
+        username = message.from_user.username or message.from_user.first_name
+
+        save_to_excel(username, phone, "telegram")
+
+        await bot.send_message(
+            ADMIN_ID,
+            f"Новая заявка\n@{username}\nТелефон: {phone}"
+        )
+
+        await message.answer("Спасибо! Мы свяжемся с вами.")
+
+    except Exception as e:
+        print("Contact error:", e)
 
 
 # WEB SERVER для Render
