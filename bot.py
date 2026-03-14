@@ -1,14 +1,9 @@
 import os
-import logging
 import asyncio
-import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from datetime import datetime
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from telegram import (
     Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
     ReplyKeyboardMarkup,
     KeyboardButton
 )
@@ -17,240 +12,187 @@ from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
-    filters,
-    ContextTypes
+    ContextTypes,
+    filters
 )
+
+# =========================
+# НАСТРОЙКИ
+# =========================
 
 TOKEN = os.getenv("BOT_TOKEN")
 
 ADMIN_ID = 1584040288
 
-PRODUCT_NAME = "Сани-волокуши MAXIHOD"
+POST_GROUPS = [
+    # сюда потом добавим группы
+]
 
-PRODUCT_TEXT = """
-🛷 Сани-волокуши MAXIHOD
+PRODUCT_PATH = "products/01_Maxihod_Sani"
 
-Прочные санки для:
+# =========================
+# WEB SERVER (для Render)
+# =========================
 
-• рыбалки  
-• охоты  
-• перевозки груза  
-
-📍 Нижневартовск
-
-Чтобы узнать цену — нажмите кнопку ниже
-"""
-
-BOT_LINK = "https://t.me/batrak_sales_bot"
-
-groups_file = "groups.txt"
-backup_file = "backup_leads.txt"
-
-logging.basicConfig(level=logging.INFO)
-
-
-# ---------------- WEB SERVER (для Render) ----------------
-
-class HealthHandler(BaseHTTPRequestHandler):
+class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
-        self.send_header("Content-type", "text/plain")
         self.end_headers()
         self.wfile.write(b"Bot is running")
 
-
 def run_web():
     port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    server = HTTPServer(("0.0.0.0", port), Handler)
+    print("WEB SERVER STARTED")
     server.serve_forever()
 
-
-# ---------------- СОХРАНЕНИЕ ГРУПП ----------------
-
-def save_group(chat_id):
-
-    try:
-
-        if not os.path.exists(groups_file):
-            open(groups_file, "w").close()
-
-        with open(groups_file, "r") as f:
-            groups = f.read().splitlines()
-
-        if str(chat_id) not in groups:
-
-            with open(groups_file, "a") as f:
-                f.write(str(chat_id) + "\n")
-
-    except Exception as e:
-        logging.error(e)
-
-
-# ---------------- РЕЗЕРВ ЛИДОВ ----------------
-
-def save_backup(text):
-
-    try:
-
-        with open(backup_file, "a", encoding="utf-8") as f:
-            f.write(text + "\n\n")
-
-    except:
-        pass
-
-
-# ---------------- УВЕДОМЛЕНИЯ АДМИНУ ----------------
-
-async def notify_admin(context, text):
-
-    try:
-        await context.bot.send_message(ADMIN_ID, f"⚠️ {text}")
-    except:
-        pass
-
-
-# ---------------- START ----------------
+# =========================
+# КОМАНДА START
+# =========================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
+    keyboard = [
+        [KeyboardButton("Поделиться номером", request_contact=True)]
+    ]
+
+    reply_markup = ReplyKeyboardMarkup(
+        keyboard,
+        resize_keyboard=True
+    )
+
+    photos = [
+        f"{PRODUCT_PATH}/1.jpg",
+        f"{PRODUCT_PATH}/2.jpg"
+    ]
+
+    text = open(f"{PRODUCT_PATH}/description.txt").read()
+
     try:
-
-        chat = update.effective_chat
-
-        if chat.type in ["group", "supergroup"]:
-            save_group(chat.id)
-            return
-
-        keyboard = [
-            [KeyboardButton("📞 Поделиться номером", request_contact=True)]
-        ]
-
-        reply_markup = ReplyKeyboardMarkup(
-            keyboard,
-            resize_keyboard=True
+        await update.message.reply_photo(
+            photo=open(photos[0], "rb"),
+            caption=text,
+            reply_markup=reply_markup
         )
-
-        await update.message.reply_text(PRODUCT_TEXT)
-
+    except:
         await update.message.reply_text(
-            "Отправляя номер телефона вы соглашаетесь "
-            "с обработкой персональных данных.",
+            text,
             reply_markup=reply_markup
         )
 
-    except Exception as e:
-        await notify_admin(context, f"Ошибка start: {e}")
-
-
-# ---------------- ПОЛУЧЕНИЕ НОМЕРА ----------------
+# =========================
+# ПОЛУЧЕНИЕ НОМЕРА
+# =========================
 
 async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    try:
+    contact = update.message.contact
+    user = update.message.from_user
 
-        contact = update.message.contact
-        user = update.message.from_user
+    text = f"""
+Новая заявка
 
-        phone = contact.phone_number
-
-        text = f"""
-🔥 Новая заявка
-
-Товар: {PRODUCT_NAME}
 Имя: {user.first_name}
 Username: @{user.username}
-Телефон: {phone}
-
-Источник: Telegram
-Дата: {datetime.now()}
+Телефон: {contact.phone_number}
+ID: {user.id}
 """
 
-        await context.bot.send_message(ADMIN_ID, text)
+    await context.bot.send_message(
+        ADMIN_ID,
+        text
+    )
 
-        save_backup(text)
+    await update.message.reply_text(
+        "Спасибо! Мы скоро свяжемся с вами."
+    )
 
-        await update.message.reply_text(
-            "Спасибо! Мы скоро свяжемся с вами."
-        )
+# =========================
+# АВТОПОСТ
+# =========================
 
-    except Exception as e:
-        await notify_admin(context, f"Ошибка контакта: {e}")
+async def autopost(application):
 
+    print("AUTOP POST START")
 
-# ---------------- АВТОПОСТИНГ ----------------
+    photos = [
+        f"{PRODUCT_PATH}/1.jpg",
+        f"{PRODUCT_PATH}/2.jpg"
+    ]
 
-async def autopost(context: ContextTypes.DEFAULT_TYPE):
+    text = open(f"{PRODUCT_PATH}/description.txt").read()
 
-    try:
+    for group in POST_GROUPS:
 
-        if not os.path.exists(groups_file):
-            return
+        try:
 
-        with open(groups_file) as f:
-            groups = f.read().splitlines()
+            await application.bot.send_photo(
+                chat_id=group,
+                photo=open(photos[0], "rb"),
+                caption=text
+            )
 
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔘 Открыть бота", url=BOT_LINK)]
-        ])
+            print("POSTED:", group)
 
-        for group in groups:
+        except Exception as e:
+
+            print("POST ERROR:", group, e)
 
             try:
-
-                await context.bot.send_message(
-                    chat_id=int(group),
-                    text=PRODUCT_TEXT,
-                    reply_markup=keyboard
+                await application.bot.send_message(
+                    ADMIN_ID,
+                    f"Ошибка постинга в {group}\n{e}"
                 )
+            except:
+                pass
 
-                await asyncio.sleep(15)
+# =========================
+# ЦИКЛ АВТОПОСТА
+# =========================
 
-            except Exception as e:
-                logging.error(e)
+async def autopost_loop(application):
 
-    except Exception as e:
-        await notify_admin(context, f"Ошибка автопоста: {e}")
+    await asyncio.sleep(120)
 
+    while True:
 
-# ---------------- РУЧНОЙ ПОСТ ----------------
+        try:
+            await autopost(application)
+        except Exception as e:
+            print("AUTOP ERROR:", e)
 
-async def post_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await asyncio.sleep(7200)
 
-    if update.effective_user.id != ADMIN_ID:
-        return
-
-    await autopost(context)
-
-    await update.message.reply_text("Пост отправлен.")
-
-
-# ---------------- MAIN ----------------
+# =========================
+# MAIN
+# =========================
 
 def main():
 
     print("BOT STARTED")
 
-    threading.Thread(target=run_web).start()
-
     application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("post", post_command))
+    application.add_handler(MessageHandler(filters.CONTACT, contact_handler))
 
-    application.add_handler(
-        MessageHandler(filters.CONTACT, contact_handler)
-    )
+    loop = asyncio.get_event_loop()
 
-    job_queue = application.job_queue
-
-    job_queue.run_repeating(
-        autopost,
-        interval=7200,
-        first=120
+    loop.create_task(
+        autopost_loop(application)
     )
 
     application.run_polling()
 
+# =========================
+# ЗАПУСК
+# =========================
 
 if __name__ == "__main__":
+
+    from threading import Thread
+
+    web_thread = Thread(target=run_web)
+    web_thread.start()
+
     main()
