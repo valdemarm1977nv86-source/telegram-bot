@@ -22,16 +22,14 @@ from telegram.ext import (
 
 TOKEN = os.getenv("BOT_TOKEN")
 
-ADMIN_ID = 1584040288
+ADMIN_ID = 123456789  # сюда потом поставим твой Telegram ID
 
-POST_GROUPS = [
-    # сюда потом добавим группы
+GROUPS = [
+    "@fishing_shop3"
 ]
 
-PRODUCT_PATH = "products/01_Maxihod_Sani"
-
 # =========================
-# WEB SERVER (для Render)
+# HTTP SERVER (для Render)
 # =========================
 
 class Handler(BaseHTTPRequestHandler):
@@ -43,17 +41,16 @@ class Handler(BaseHTTPRequestHandler):
 def run_web():
     port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(("0.0.0.0", port), Handler)
-    print("WEB SERVER STARTED")
     server.serve_forever()
 
 # =========================
-# КОМАНДА START
+# /START
 # =========================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = [
-        [KeyboardButton("Поделиться номером", request_contact=True)]
+        [KeyboardButton("🛒 Оставить заявку")]
     ]
 
     reply_markup = ReplyKeyboardMarkup(
@@ -61,50 +58,94 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         resize_keyboard=True
     )
 
-    photos = [
-        f"{PRODUCT_PATH}/1.jpg",
-        f"{PRODUCT_PATH}/2.jpg"
-    ]
-
-    text = open(f"{PRODUCT_PATH}/description.txt").read()
+    text = open(
+        "products/01_Maxihod_Sani/description.txt",
+        encoding="utf-8"
+    ).read()
 
     try:
+
         await update.message.reply_photo(
-            photo=open(photos[0], "rb"),
+            photo=open("products/01_Maxihod_Sani/1.jpg", "rb"),
             caption=text,
             reply_markup=reply_markup
         )
-    except:
+
+        await update.message.reply_photo(
+            photo=open("products/01_Maxihod_Sani/2.jpg", "rb")
+        )
+
+    except Exception as e:
+
+        print("PHOTO ERROR:", e)
+
         await update.message.reply_text(
             text,
             reply_markup=reply_markup
         )
 
 # =========================
-# ПОЛУЧЕНИЕ НОМЕРА
+# КНОПКА ЗАЯВКИ
 # =========================
 
-async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    text = """
+Перед отправкой номера телефона необходимо согласие
+на обработку персональных данных.
+
+Нажимая кнопку "Согласен" вы разрешаете
+нам связаться с вами по вашему запросу.
+"""
+
+    keyboard = [
+        [KeyboardButton("✅ Согласен")]
+    ]
+
+    await update.message.reply_text(
+        text,
+        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    )
+
+# =========================
+# ЗАПРОС ТЕЛЕФОНА
+# =========================
+
+async def ask_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    keyboard = [
+        [KeyboardButton("📱 Поделиться номером", request_contact=True)]
+    ]
+
+    await update.message.reply_text(
+        "Нажмите кнопку ниже чтобы отправить номер телефона",
+        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    )
+
+# =========================
+# ПОЛУЧЕНИЕ ТЕЛЕФОНА
+# =========================
+
+async def get_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     contact = update.message.contact
     user = update.message.from_user
 
     text = f"""
-Новая заявка
+🔥 НОВАЯ ЗАЯВКА
 
 Имя: {user.first_name}
-Username: @{user.username}
 Телефон: {contact.phone_number}
-ID: {user.id}
+Username: @{user.username}
 """
 
     await context.bot.send_message(
-        ADMIN_ID,
-        text
+        chat_id=ADMIN_ID,
+        text=text
     )
 
     await update.message.reply_text(
-        "Спасибо! Мы скоро свяжемся с вами."
+        "Спасибо! Мы скоро с вами свяжемся."
     )
 
 # =========================
@@ -113,86 +154,76 @@ ID: {user.id}
 
 async def autopost(application):
 
-    print("AUTOP POST START")
+    text = open(
+        "products/01_Maxihod_Sani/description.txt",
+        encoding="utf-8"
+    ).read()
 
-    photos = [
-        f"{PRODUCT_PATH}/1.jpg",
-        f"{PRODUCT_PATH}/2.jpg"
-    ]
-
-    text = open(f"{PRODUCT_PATH}/description.txt").read()
-
-    for group in POST_GROUPS:
+    for group in GROUPS:
 
         try:
 
             await application.bot.send_photo(
                 chat_id=group,
-                photo=open(photos[0], "rb"),
+                photo=open("products/01_Maxihod_Sani/1.jpg", "rb"),
                 caption=text
             )
 
-            print("POSTED:", group)
+            await application.bot.send_photo(
+                chat_id=group,
+                photo=open("products/01_Maxihod_Sani/2.jpg", "rb")
+            )
 
         except Exception as e:
 
-            print("POST ERROR:", group, e)
-
-            try:
-                await application.bot.send_message(
-                    ADMIN_ID,
-                    f"Ошибка постинга в {group}\n{e}"
-                )
-            except:
-                pass
-
-# =========================
-# ЦИКЛ АВТОПОСТА
-# =========================
-
-async def autopost_loop(application):
-
-    await asyncio.sleep(120)
-
-    while True:
-
-        try:
-            await autopost(application)
-        except Exception as e:
-            print("AUTOP ERROR:", e)
-
-        await asyncio.sleep(7200)
+            print("POST ERROR:", e)
 
 # =========================
 # MAIN
 # =========================
 
-def main():
-
-    print("BOT STARTED")
+async def main():
 
     application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.CONTACT, contact_handler))
 
-    loop = asyncio.get_event_loop()
-
-    loop.create_task(
-        autopost_loop(application)
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex("🛒 Оставить заявку"),
+            consent
+        )
     )
 
-    application.run_polling()
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex("✅ Согласен"),
+            ask_phone
+        )
+    )
 
-# =========================
-# ЗАПУСК
+    application.add_handler(
+        MessageHandler(
+            filters.CONTACT,
+            get_contact
+        )
+    )
+
+    # автопост каждые 2 часа
+    asyncio.create_task(
+        autopost(application)
+    )
+
+    print("BOT STARTED")
+
+    await application.run_polling()
+
 # =========================
 
 if __name__ == "__main__":
 
     from threading import Thread
 
-    web_thread = Thread(target=run_web)
-    web_thread.start()
+    Thread(target=run_web).start()
 
-    main()
+    asyncio.run(main())
