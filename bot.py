@@ -189,9 +189,12 @@ def main():
 
     print("BOT STARTED")
 
-    application.run_polling(
-        drop_pending_updates=True
-    )
+await application.bot.delete_webhook(drop_pending_updates=True)
+
+application.run_polling(
+    drop_pending_updates=True,
+    close_loop=False
+)
 
 
 # =========================
