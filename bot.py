@@ -5,8 +5,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from telegram import (
     Update,
     ReplyKeyboardMarkup,
-    KeyboardButton,
-    InputMediaPhoto
+    KeyboardButton
 )
 
 from telegram.ext import (
@@ -17,11 +16,8 @@ from telegram.ext import (
     filters
 )
 
-# =========================
-# НАСТРОЙКИ
-# =========================
-
 TOKEN = os.getenv("BOT_TOKEN")
+
 ADMIN_ID = 1584040288
 
 PHOTO1 = "products/01_Maxihod_Sani/1.jpg"
@@ -29,32 +25,23 @@ PHOTO2 = "products/01_Maxihod_Sani/2.jpg"
 DESCRIPTION = "products/01_Maxihod_Sani/description.txt"
 
 
-# =========================
-# HTTP СЕРВЕР (чтобы Render не засыпал)
-# =========================
+# WEB SERVER (для Render)
 
 class Handler(BaseHTTPRequestHandler):
-
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Bot is alive")
+        self.wfile.write(b"Bot is running")
 
 
 def run_web():
-
     port = int(os.environ.get("PORT", 10000))
-
-    server = HTTPServer(("0.0.0.0", port), Handler)
-
+    server = HTTPServer(("", port), Handler)
     print("WEB SERVER STARTED")
-
     server.serve_forever()
 
 
-# =========================
-# СТАРТ БОТА
-# =========================
+# /start
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -63,17 +50,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with open(DESCRIPTION, "r", encoding="utf-8") as f:
             text = f.read()
 
-        media = [
-            InputMediaPhoto(open(PHOTO1, "rb"), caption=text),
-            InputMediaPhoto(open(PHOTO2, "rb"))
-        ]
+        await update.message.reply_photo(
+            photo=open(PHOTO1, "rb"),
+            caption=text
+        )
 
-        await update.message.reply_media_group(media)
+        await update.message.reply_photo(
+            photo=open(PHOTO2, "rb")
+        )
 
-        keyboard = [[KeyboardButton("📞 Оставить контакт")]]
+        keyboard = [[KeyboardButton("📞 Оставить контакт", request_contact=True)]]
 
         await update.message.reply_text(
-            "👇 Нажмите кнопку ниже чтобы оставить контакт",
+            "👇 Нажмите кнопку ниже чтобы оставить заявку",
             reply_markup=ReplyKeyboardMarkup(
                 keyboard,
                 resize_keyboard=True
@@ -82,63 +71,25 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
 
-        print("ERROR START:", e)
+        print("PRODUCT ERROR:", e)
 
         await update.message.reply_text(
             "Ошибка загрузки товара"
         )
 
 
-# =========================
-# СОГЛАСИЕ НА ДАННЫЕ
-# =========================
-
-async def consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    text = """
-📄 Согласие на обработку персональных данных
-
-Нажимая кнопку ниже, вы соглашаетесь
-на обработку вашего номера телефона
-для связи по заявке.
-
-Номер используется только
-для обратного звонка.
-"""
-
-    keyboard = [[
-        KeyboardButton(
-            "📱 Поделиться номером",
-            request_contact=True
-        )
-    ]]
-
-    await update.message.reply_text(
-        text,
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard,
-            resize_keyboard=True,
-            one_time_keyboard=True
-        )
-    )
-
-
-# =========================
-# ПОЛУЧЕНИЕ НОМЕРА
-# =========================
+# получение контакта
 
 async def get_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     contact = update.message.contact
     user = update.message.from_user
 
-    username = user.username if user.username else "нет"
-
     text = f"""
 🔥 Новая заявка
 
-Имя: {user.first_name}
-Username: @{username}
+Имя: {contact.first_name}
+Username: @{user.username}
 Телефон: {contact.phone_number}
 ID: {user.id}
 """
@@ -149,22 +100,11 @@ ID: {user.id}
     )
 
     await update.message.reply_text(
-        "✅ Спасибо! Мы скоро свяжемся с вами."
+        "Спасибо! Мы скоро свяжемся с вами."
     )
 
 
-# =========================
-# ОБРАБОТКА ОШИБОК
-# =========================
-
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-
-    print("ERROR:", context.error)
-
-
-# =========================
-# MAIN
-# =========================
+# main
 
 def main():
 
@@ -175,31 +115,17 @@ def main():
     application.add_handler(CommandHandler("start", start))
 
     application.add_handler(
-        MessageHandler(
-            filters.TEXT & filters.Regex("Оставить контакт"),
-            consent
-        )
-    )
-
-    application.add_handler(
         MessageHandler(filters.CONTACT, get_contact)
     )
 
-    application.add_error_handler(error_handler)
-
     print("BOT STARTED")
 
-await application.bot.delete_webhook(drop_pending_updates=True)
-
-application.run_polling(
-    drop_pending_updates=True,
-    close_loop=False
-)
+    application.run_polling(
+        drop_pending_updates=True
+    )
 
 
-# =========================
-# ЗАПУСК
-# =========================
+# запуск
 
 if __name__ == "__main__":
 
