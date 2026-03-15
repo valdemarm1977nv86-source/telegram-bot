@@ -1,45 +1,38 @@
-import logging
 import os
 import random
-from datetime import datetime
+import logging
 
 from telegram import (
     Update,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     KeyboardButton,
-    ReplyKeyboardMarkup,
-    InputFile
+    ReplyKeyboardMarkup
 )
 
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
-    ContextTypes,
     CallbackQueryHandler,
     MessageHandler,
+    ContextTypes,
     filters
 )
 
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+logging.basicConfig(level=logging.INFO)
 
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
 
-POST_INTERVAL = 3600
-RANDOM_DELAY_MIN = 300
-RANDOM_DELAY_MAX = 900
-
-PHOTO_PATH = "photo.jpg"
+PHOTO = "photo.jpg"
 
 TEXT = """
 🔥 БАТРАК — работа для тех, кто готов зарабатывать
 
-💰 Высокие выплаты
-📍 Работа рядом
-⚡ Быстрый старт
+💰 Высокие выплаты  
+📍 Работа рядом  
+⚡ Быстрый старт  
 
 👇 Нажмите кнопку ниже чтобы оставить заявку
 """
@@ -56,30 +49,16 @@ POLICY = """
 • username Telegram
 """
 
-logging.basicConfig(level=logging.INFO)
-
-# Google Sheets
-scope = [
-    "https://spreadsheets.google.com/feeds",
-    "https://www.googleapis.com/auth/drive"
-]
-
-creds = ServiceAccountCredentials.from_json_keyfile_name(
-    "credentials.json",
-    scope
-)
-
-client = gspread.authorize(creds)
-sheet = client.open("batrak_leads").sheet1
+POST_INTERVAL = 3600
 
 
+# START
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    with open(PHOTO_PATH, "rb") as photo:
-        await update.message.reply_photo(
-            photo=photo,
-            caption=TEXT
-        )
+    await update.message.reply_photo(
+        photo=open(PHOTO, "rb"),
+        caption=TEXT
+    )
 
     keyboard = [
         [InlineKeyboardButton("✅ Согласен", callback_data="agree")]
@@ -91,28 +70,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# AGREE
 async def agree(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     query = update.callback_query
     await query.answer()
 
-    contact_button = KeyboardButton(
+    button = KeyboardButton(
         "📞 Отправить контакт",
         request_contact=True
     )
 
-    keyboard = [[contact_button]]
+    keyboard = ReplyKeyboardMarkup(
+        [[button]],
+        resize_keyboard=True
+    )
 
     await query.message.reply_text(
         "Нажмите кнопку чтобы отправить номер",
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard,
-            resize_keyboard=True,
-            one_time_keyboard=True
-        )
+        reply_markup=keyboard
     )
 
 
+# CONTACT
 async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     contact = update.message.contact
@@ -121,14 +101,6 @@ async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     phone = contact.phone_number
     user = update.message.from_user.username
     user_id = update.message.from_user.id
-
-    sheet.append_row([
-        datetime.now().strftime("%Y-%m-%d %H:%M"),
-        name,
-        phone,
-        user,
-        user_id
-    ])
 
     text = f"""
 🔥 Новая заявка
@@ -145,20 +117,21 @@ ID: {user_id}
     )
 
     await update.message.reply_text(
-        "Спасибо! Ваша заявка отправлена."
+        "Спасибо! Заявка отправлена."
     )
 
 
+# AUTOPOST
 async def autopost(context: ContextTypes.DEFAULT_TYPE):
 
-    with open(PHOTO_PATH, "rb") as photo:
-        await context.bot.send_photo(
-            chat_id=CHANNEL_ID,
-            photo=photo,
-            caption=TEXT
-        )
+    await context.bot.send_photo(
+        chat_id=CHANNEL_ID,
+        photo=open(PHOTO, "rb"),
+        caption=TEXT
+    )
 
 
+# MAIN
 def main():
 
     app = ApplicationBuilder().token(TOKEN).build()
@@ -167,14 +140,9 @@ def main():
     app.add_handler(CallbackQueryHandler(agree, pattern="agree"))
     app.add_handler(MessageHandler(filters.CONTACT, contact_handler))
 
-    interval = POST_INTERVAL + random.randint(
-        RANDOM_DELAY_MIN,
-        RANDOM_DELAY_MAX
-    )
-
     app.job_queue.run_repeating(
         autopost,
-        interval=interval,
+        interval=POST_INTERVAL,
         first=60
     )
 
