@@ -1,8 +1,20 @@
 {
-  "products": {
-    "01_Maxihod_Sani": {
-      "name": "🛷 Сани MAXIHOD",
-      "admin_id": 1584040288
-    }
+ "TOKEN":"8478610683:AAHiFTgUNYTjODzv12_aE3IZg6sDjd1ZcVs",
+
+ "ADMIN_ID":1584040288,
+
+ "CHANNEL_ID":"@maxihod_sale",
+
+ "AUTOPUBLISH":true,
+
+ "POST_INTERVAL":300,
+
+ "RANDOM_DELAY_MIN":300,
+ "RANDOM_DELAY_MAX":1200,
+
+ "products": {
+  "01_Maxihod_Sani": {
+   "name": "🛷 Сани МАХИХОД"
   }
+ }
 }
