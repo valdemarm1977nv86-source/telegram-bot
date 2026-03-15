@@ -1,168 +1,68 @@
-import os
-import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+   САНИ – ВОЛОКУШИ МАКСИХОД
 
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+Производство и продажа усиленных
+саней из высокопрочного
+пластика низкого давления 
+_____________________
+       МОДЕЛИ САНЕЙ
 
+  MAX ЭКО 205
+Длина: 205 см
+Ширина по дну: 55 см
+Ширина в развале: 75 см
+Высота борта: 27 см
+Длина дышла: 100 см
+Толщина: 6 мм
+Вес: 30 кг
 
-TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = 1584040288
+  MAX ЭКО 215
+Длина: 215 см
+Ширина по дну: 55 см
+Ширина в развале: 75 см
+Высота борта: 27 см
+Длина дышла: 100 см
+Толщина: 6 мм
+Вес: 30 кг
 
-PHOTO1 = "products/01_Maxihod_Sani/1.jpg"
-PHOTO2 = "products/01_Maxihod_Sani/2.jpg"
-DESCRIPTION = "products/01_Maxihod_Sani/description.txt"
+  MAX ЭКО PRO 250
+Длина: 250 см
+Ширина по дну: 70 см
+Ширина в развале: 85 см
+Высота борта: 39 см
+Длина дышла: 120 см
+Толщина: 8 мм
+Вес: 50 кг
 
+  MAX ЭКО 265
+Длина: 265 см
+Ширина по дну: 55 см
+Ширина в развале: 75 см
+Высота борта: 27 см
+Длина дышла: 100 см
+Толщина: 6 мм
+Вес: 30 кг
+_______________________
+Дополнительное оборудование
 
-# =========================
-# WEB SERVER (для Render)
-# =========================
+- складное стоячее место
+- ящик-сидушка
+- мягкая накладка
+- ручки на борта
+- тент
+- сумка-вкладыш
+________________________
+Цена от 33000 руб.
 
-class Handler(BaseHTTPRequestHandler):
+📩 Если вас заинтересовал товар:
+Свяжитесь с нами или
+оставьте номер телефона 📱 
+и мы вам перезвоним. 
 
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Bot is running")
-
-
-def run_web():
-    port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(("0.0.0.0", port), Handler)
-    server.serve_forever()
-
-
-# =========================
-# START
-# =========================
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    keyboard = [[KeyboardButton("🛒 Оставить заявку")]]
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-    try:
-
-        text = open(DESCRIPTION, encoding="utf-8").read()
-
-        with open(PHOTO1, "rb") as p1:
-            await update.message.reply_photo(photo=p1)
-
-        with open(PHOTO2, "rb") as p2:
-            await update.message.reply_photo(photo=p2)
-
-        await update.message.reply_text(
-            text,
-            reply_markup=reply_markup
-        )
-
-    except Exception as e:
-
-        print("PHOTO ERROR:", e)
-
-        await update.message.reply_text(
-            "Ошибка загрузки фото товара",
-            reply_markup=reply_markup
-        )
-
-
-# =========================
-# СОГЛАСИЕ
-# =========================
-
-async def consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    text = """
-📄 Согласие на обработку персональных данных
-
-Нажимая кнопку "Согласен", вы разрешаете
-обработку вашего номера телефона для связи
-по вашей заявке.
-
-Данные используются только для связи.
-"""
-
-    keyboard = [[KeyboardButton("✅ Согласен")]]
-
-    await update.message.reply_text(
-        text,
-        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    )
-
-
-# =========================
-# ЗАПРОС ТЕЛЕФОНА
-# =========================
-
-async def ask_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    keyboard = [[KeyboardButton("📱 Поделиться номером", request_contact=True)]]
-
-    await update.message.reply_text(
-        "Нажмите кнопку чтобы отправить номер телефона",
-        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    )
-
-
-# =========================
-# ПОЛУЧЕНИЕ КОНТАКТА
-# =========================
-
-async def get_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    contact = update.message.contact
-    user = update.message.from_user
-
-    username = user.username if user.username else "нет"
-
-    text = f"""
-🔥 Новая заявка
-
-Имя: {user.first_name}
-Username: @{username}
-Телефон: {contact.phone_number}
-ID: {user.id}
-"""
-
-    await context.bot.send_message(
-        chat_id=ADMIN_ID,
-        text=text
-    )
-
-    await update.message.reply_text(
-        "Спасибо! Мы скоро свяжемся с вами."
-    )
-
-
-# =========================
-# MAIN
-# =========================
-
-def main():
-
-    application = Application.builder().token(TOKEN).build()
-
-    application.add_handler(CommandHandler("start", start))
-
-    application.add_handler(
-        MessageHandler(filters.TEXT & filters.Regex("Оставить"), consent)
-    )
-
-    application.add_handler(
-        MessageHandler(filters.TEXT & filters.Regex("Согласен"), ask_phone)
-    )
-
-    application.add_handler(
-        MessageHandler(filters.CONTACT, get_contact)
-    )
-
-    print("BOT STARTED")
-
-    application.run_polling()
-
-
-if __name__ == "__main__":
-
-    threading.Thread(target=run_web).start()
-
-    main()
+       Контакты :
+    Компания МАКСИХОД  
+г. Нижневартовск , ХМАО-Югра,
+ул. Интернациональная 60
+https://2gis.ru/nizhnevartovsk/geo/70030076172253420/76.645791,60.943740
+  
+☎️ Телефон / MAX: +7 922 447 40 86  
+📧 Email: MaxihodNV86@yandex.ru
