@@ -1,114 +1,110 @@
 import os
-import random
-import logging
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from telegram import (
     Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    KeyboardButton,
-    ReplyKeyboardMarkup
+    ReplyKeyboardMarkup,
+    KeyboardButton
 )
 
 from telegram.ext import (
-    ApplicationBuilder,
+    Application,
     CommandHandler,
-    CallbackQueryHandler,
     MessageHandler,
     ContextTypes,
     filters
 )
 
-logging.basicConfig(level=logging.INFO)
+# =========================
+# НАСТРОЙКИ
+# =========================
 
 TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
-CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
+ADMIN_ID = 1584040288
 
-PHOTO = "photo.jpg"
-
-TEXT = """
-🔥 БАТРАК — работа для тех, кто готов зарабатывать
-
-💰 Высокие выплаты  
-📍 Работа рядом  
-⚡ Быстрый старт  
-
-👇 Нажмите кнопку ниже чтобы оставить заявку
-"""
-
-POLICY = """
-📄 Политика обработки персональных данных
-
-Отправляя номер телефона через бота,
-вы соглашаетесь на обработку персональных данных.
-
-Собираемые данные:
-• имя
-• номер телефона
-• username Telegram
-"""
-
-POST_INTERVAL = 3600
+PHOTO1 = "products/01_Maxihod_Sani/1.jpg"
+PHOTO2 = "products/01_Maxihod_Sani/2.jpg"
+DESCRIPTION = "products/01_Maxihod_Sani/description.txt"
 
 
-# START
+# =========================
+# WEB SERVER (для Render)
+# =========================
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running")
+
+
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("", port), Handler)
+    print("WEB SERVER STARTED")
+    server.serve_forever()
+
+
+# =========================
+# /start
+# =========================
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    await update.message.reply_photo(
-        photo=open(PHOTO, "rb"),
-        caption=TEXT
-    )
+    try:
 
-    keyboard = [
-        [InlineKeyboardButton("✅ Согласен", callback_data="agree")]
-    ]
+        with open(DESCRIPTION, "r", encoding="utf-8") as f:
+            text = f.read()
 
-    await update.message.reply_text(
-        POLICY,
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+        # фото 1
+        with open(PHOTO1, "rb") as p1:
+            await update.message.reply_photo(photo=p1)
 
+        # фото 2
+        with open(PHOTO2, "rb") as p2:
+            await update.message.reply_photo(photo=p2)
 
-# AGREE
-async def agree(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        # описание отдельно (чтобы не было ошибки caption)
+        await update.message.reply_text(text)
 
-    query = update.callback_query
-    await query.answer()
+        keyboard = [[KeyboardButton("📞 Оставить контакт", request_contact=True)]]
 
-    button = KeyboardButton(
-        "📞 Отправить контакт",
-        request_contact=True
-    )
+        await update.message.reply_text(
+            "👇 Нажмите кнопку ниже чтобы оставить заявку",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard,
+                resize_keyboard=True
+            )
+        )
 
-    keyboard = ReplyKeyboardMarkup(
-        [[button]],
-        resize_keyboard=True
-    )
+    except Exception as e:
 
-    await query.message.reply_text(
-        "Нажмите кнопку чтобы отправить номер",
-        reply_markup=keyboard
-    )
+        print("START ERROR:", e)
+
+        await update.message.reply_text(
+            "Ошибка загрузки товара"
+        )
 
 
-# CONTACT
-async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# =========================
+# ПОЛУЧЕНИЕ КОНТАКТА
+# =========================
+
+async def get_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     contact = update.message.contact
+    user = update.message.from_user
 
-    name = contact.first_name
-    phone = contact.phone_number
-    user = update.message.from_user.username
-    user_id = update.message.from_user.id
+    username = user.username if user.username else "нет"
 
     text = f"""
 🔥 Новая заявка
 
-Имя: {name}
-Username: @{user}
-Телефон: {phone}
-ID: {user_id}
+Имя: {contact.first_name}
+Username: @{username}
+Телефон: {contact.phone_number}
+ID: {user.id}
 """
 
     await context.bot.send_message(
@@ -117,39 +113,40 @@ ID: {user_id}
     )
 
     await update.message.reply_text(
-        "Спасибо! Заявка отправлена."
+        "Спасибо! Мы скоро свяжемся с вами."
     )
 
 
-# AUTOPOST
-async def autopost(context: ContextTypes.DEFAULT_TYPE):
-
-    await context.bot.send_photo(
-        chat_id=CHANNEL_ID,
-        photo=open(PHOTO, "rb"),
-        caption=TEXT
-    )
-
-
+# =========================
 # MAIN
+# =========================
+
 def main():
 
-    app = ApplicationBuilder().token(TOKEN).build()
+    print("BOT STARTING...")
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(agree, pattern="agree"))
-    app.add_handler(MessageHandler(filters.CONTACT, contact_handler))
+    application = Application.builder().token(TOKEN).build()
 
-    app.job_queue.run_repeating(
-        autopost,
-        interval=POST_INTERVAL,
-        first=60
+    application.add_handler(CommandHandler("start", start))
+
+    application.add_handler(
+        MessageHandler(filters.CONTACT, get_contact)
     )
 
     print("BOT STARTED")
 
-    app.run_polling()
+    application.run_polling(
+        drop_pending_updates=True
+    )
 
+
+# =========================
+# ЗАПУСК
+# =========================
 
 if __name__ == "__main__":
+
+    threading.Thread(target=run_web).start()
+
     main()
+
