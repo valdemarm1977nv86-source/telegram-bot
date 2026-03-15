@@ -16,8 +16,11 @@ from telegram.ext import (
     filters
 )
 
-TOKEN = os.getenv("BOT_TOKEN")
+# =========================
+# НАСТРОЙКИ
+# =========================
 
+TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = 1584040288
 
 PHOTO1 = "products/01_Maxihod_Sani/1.jpg"
@@ -25,7 +28,9 @@ PHOTO2 = "products/01_Maxihod_Sani/2.jpg"
 DESCRIPTION = "products/01_Maxihod_Sani/description.txt"
 
 
+# =========================
 # WEB SERVER (для Render)
+# =========================
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -41,7 +46,9 @@ def run_web():
     server.serve_forever()
 
 
+# =========================
 # /start
+# =========================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -50,14 +57,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with open(DESCRIPTION, "r", encoding="utf-8") as f:
             text = f.read()
 
-        await update.message.reply_photo(
-            photo=open(PHOTO1, "rb"),
-            caption=text
-        )
+        # фото 1
+        with open(PHOTO1, "rb") as p1:
+            await update.message.reply_photo(photo=p1)
 
-        await update.message.reply_photo(
-            photo=open(PHOTO2, "rb")
-        )
+        # фото 2
+        with open(PHOTO2, "rb") as p2:
+            await update.message.reply_photo(photo=p2)
+
+        # описание отдельно (чтобы не было ошибки caption)
+        await update.message.reply_text(text)
 
         keyboard = [[KeyboardButton("📞 Оставить контакт", request_contact=True)]]
 
@@ -71,25 +80,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
 
-        print("PRODUCT ERROR:", e)
+        print("START ERROR:", e)
 
         await update.message.reply_text(
             "Ошибка загрузки товара"
         )
 
 
-# получение контакта
+# =========================
+# ПОЛУЧЕНИЕ КОНТАКТА
+# =========================
 
 async def get_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     contact = update.message.contact
     user = update.message.from_user
 
+    username = user.username if user.username else "нет"
+
     text = f"""
 🔥 Новая заявка
 
 Имя: {contact.first_name}
-Username: @{user.username}
+Username: @{username}
 Телефон: {contact.phone_number}
 ID: {user.id}
 """
@@ -104,7 +117,9 @@ ID: {user.id}
     )
 
 
-# main
+# =========================
+# MAIN
+# =========================
 
 def main():
 
@@ -125,7 +140,9 @@ def main():
     )
 
 
-# запуск
+# =========================
+# ЗАПУСК
+# =========================
 
 if __name__ == "__main__":
 
