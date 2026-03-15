@@ -2,8 +2,6 @@ import os
 import json
 import asyncio
 import random
-from threading import Thread
-from flask import Flask
 
 from telegram import (
     Update,
@@ -23,7 +21,7 @@ from telegram.ext import (
     filters
 )
 
-# ---------------- CONFIG ----------------
+# ---------- CONFIG ----------
 
 with open("config.json", "r", encoding="utf-8") as f:
     config = json.load(f)
@@ -38,46 +36,28 @@ RANDOM_DELAY_MAX = config["RANDOM_DELAY_MAX"]
 
 PRODUCT_FOLDER = "products/01_Maxihod_Sani"
 
-# ---------------- KEEP ALIVE ----------------
-
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "Bot is running"
-
-def run():
-    app.run(host='0.0.0.0', port=8080)
-
-def keep_alive():
-    t = Thread(target=run)
-    t.start()
-
-# ---------------- START ----------------
+# ---------- START ----------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = """
 📄 Политика обработки персональных данных
 
-Отправляя свой номер телефона через данного бота,
-вы даете согласие на обработку персональных данных.
+Отправляя номер телефона, вы соглашаетесь
+на обработку персональных данных.
 
 Собираемые данные:
+
 • имя
 • номер телефона
-• Telegram username
+• username Telegram
 
-Цель обработки данных:
+Цель:
+
 • связь с клиентом
 • оформление заявки
-• консультация по товару
 
-Данные не передаются третьим лицам
-и используются только для связи с клиентом.
-
-Нажимая кнопку «Согласен», вы подтверждаете
-согласие на обработку персональных данных.
+Нажимая «Согласен» вы принимаете условия.
 """
 
     keyboard = InlineKeyboardMarkup([
@@ -86,7 +66,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(text, reply_markup=keyboard)
 
-# ---------------- AGREEMENT ----------------
+# ---------- AGREEMENT ----------
 
 async def agree(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -104,26 +84,22 @@ async def agree(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     await query.message.reply_text(
-        "Нажмите кнопку ниже чтобы отправить номер телефона",
+        "Нажмите кнопку ниже чтобы отправить номер",
         reply_markup=keyboard
     )
 
-# ---------------- CONTACT ----------------
+# ---------- CONTACT ----------
 
 async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     contact = update.message.contact
     user = update.message.from_user
 
-    name = contact.first_name
-    phone = contact.phone_number
-    username = user.username
-
     text = (
         "🔥 Новая заявка\n\n"
-        f"Имя: {name}\n"
-        f"Username: @{username}\n"
-        f"Телефон: {phone}\n"
+        f"Имя: {contact.first_name}\n"
+        f"Username: @{user.username}\n"
+        f"Телефон: {contact.phone_number}\n"
         f"ID: {user.id}"
     )
 
@@ -136,9 +112,11 @@ async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Спасибо! Мы скоро свяжемся с вами."
     )
 
-# ---------------- AUTOPOST ----------------
+# ---------- AUTOPOST ----------
 
 async def autopost(app):
+
+    await asyncio.sleep(60)
 
     while True:
 
@@ -156,16 +134,6 @@ async def autopost(app):
 
             images.sort()
 
-            media = []
-
-            for img in images:
-
-                media.append(
-                    InputMediaPhoto(
-                        media=open(img, "rb")
-                    )
-                )
-
             with open(
                 f"{PRODUCT_FOLDER}/description.txt",
                 "r",
@@ -174,7 +142,26 @@ async def autopost(app):
 
                 caption = f.read()
 
-            media[0].caption = caption
+            media = []
+
+            for i, img in enumerate(images):
+
+                if i == 0:
+
+                    media.append(
+                        InputMediaPhoto(
+                            media=open(img, "rb"),
+                            caption=caption
+                        )
+                    )
+
+                else:
+
+                    media.append(
+                        InputMediaPhoto(
+                            media=open(img, "rb")
+                        )
+                    )
 
             await app.bot.send_media_group(
                 chat_id=CHANNEL_ID,
@@ -194,36 +181,33 @@ async def autopost(app):
 
         await asyncio.sleep(delay)
 
-# ---------------- MAIN ----------------
+# ---------- MAIN ----------
 
 async def main():
 
-    application = (
+    app = (
         ApplicationBuilder()
         .token(TOKEN)
         .build()
     )
 
-    application.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("start", start))
 
-    application.add_handler(
+    app.add_handler(
         CallbackQueryHandler(agree, pattern="agree")
     )
 
-    application.add_handler(
+    app.add_handler(
         MessageHandler(filters.CONTACT, contact_handler)
     )
 
     asyncio.create_task(
-        autopost(application)
+        autopost(app)
     )
 
     print("BOT STARTED")
 
-    await application.run_polling()
+    await app.run_polling()
 
-# ---------------- RUN ----------------
-
-keep_alive()
-
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
