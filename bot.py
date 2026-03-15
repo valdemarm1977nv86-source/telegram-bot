@@ -17,10 +17,12 @@ from telegram.ext import (
     filters
 )
 
+# =========================
+# НАСТРОЙКИ
+# =========================
 
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = 1584040288
-
 
 PHOTO1 = "products/01_Maxihod_Sani/1.jpg"
 PHOTO2 = "products/01_Maxihod_Sani/2.jpg"
@@ -28,51 +30,67 @@ DESCRIPTION = "products/01_Maxihod_Sani/description.txt"
 
 
 # =========================
-# WEB SERVER (для Render)
+# HTTP СЕРВЕР (чтобы Render не засыпал)
 # =========================
 
 class Handler(BaseHTTPRequestHandler):
+
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Bot is running")
+        self.wfile.write(b"Bot is alive")
 
 
 def run_web():
+
     port = int(os.environ.get("PORT", 10000))
+
     server = HTTPServer(("0.0.0.0", port), Handler)
+
+    print("WEB SERVER STARTED")
+
     server.serve_forever()
 
 
 # =========================
-# СТАРТ
+# СТАРТ БОТА
 # =========================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    with open(DESCRIPTION, "r", encoding="utf-8") as f:
-        text = f.read()
+    try:
 
-    media = [
-        InputMediaPhoto(open(PHOTO1, "rb"), caption=text),
-        InputMediaPhoto(open(PHOTO2, "rb"))
-    ]
+        with open(DESCRIPTION, "r", encoding="utf-8") as f:
+            text = f.read()
 
-    await update.message.reply_media_group(media)
+        media = [
+            InputMediaPhoto(open(PHOTO1, "rb"), caption=text),
+            InputMediaPhoto(open(PHOTO2, "rb"))
+        ]
 
-    keyboard = [[KeyboardButton("📞 Оставить контакт")]]
+        await update.message.reply_media_group(media)
 
-    await update.message.reply_text(
-        "👇 Нажмите кнопку ниже чтобы оставить контакт",
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard,
-            resize_keyboard=True
+        keyboard = [[KeyboardButton("📞 Оставить контакт")]]
+
+        await update.message.reply_text(
+            "👇 Нажмите кнопку ниже чтобы оставить контакт",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard,
+                resize_keyboard=True
+            )
         )
-    )
+
+    except Exception as e:
+
+        print("ERROR START:", e)
+
+        await update.message.reply_text(
+            "Ошибка загрузки товара"
+        )
 
 
 # =========================
-# СОГЛАСИЕ
+# СОГЛАСИЕ НА ДАННЫЕ
 # =========================
 
 async def consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -84,7 +102,7 @@ async def consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
 на обработку вашего номера телефона
 для связи по заявке.
 
-Ваш номер используется только
+Номер используется только
 для обратного звонка.
 """
 
@@ -106,7 +124,7 @@ async def consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # =========================
-# ПОЛУЧЕНИЕ ТЕЛЕФОНА
+# ПОЛУЧЕНИЕ НОМЕРА
 # =========================
 
 async def get_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -136,10 +154,21 @@ ID: {user.id}
 
 
 # =========================
+# ОБРАБОТКА ОШИБОК
+# =========================
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+
+    print("ERROR:", context.error)
+
+
+# =========================
 # MAIN
 # =========================
 
 def main():
+
+    print("BOT STARTING...")
 
     application = Application.builder().token(TOKEN).build()
 
@@ -156,10 +185,18 @@ def main():
         MessageHandler(filters.CONTACT, get_contact)
     )
 
+    application.add_error_handler(error_handler)
+
     print("BOT STARTED")
 
-    application.run_polling()
+    application.run_polling(
+        drop_pending_updates=True
+    )
 
+
+# =========================
+# ЗАПУСК
+# =========================
 
 if __name__ == "__main__":
 
