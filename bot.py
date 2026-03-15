@@ -2,13 +2,15 @@ import os
 import json
 import asyncio
 import random
+from threading import Thread
+from flask import Flask
 
 from telegram import (
     Update,
     KeyboardButton,
     ReplyKeyboardMarkup,
-    InlineKeyboardMarkup,
     InlineKeyboardButton,
+    InlineKeyboardMarkup,
     InputMediaPhoto
 )
 
@@ -20,6 +22,19 @@ from telegram.ext import (
     ContextTypes,
     filters
 )
+
+# ---------- FLASK SERVER ----------
+
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is alive"
+
+
+def run_web():
+    app.run(host="0.0.0.0", port=8080)
+
 
 # ---------- CONFIG ----------
 
@@ -36,6 +51,7 @@ RANDOM_DELAY_MAX = config["RANDOM_DELAY_MAX"]
 
 PRODUCT_FOLDER = "products/01_Maxihod_Sani"
 
+
 # ---------- START ----------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -43,21 +59,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = """
 📄 Политика обработки персональных данных
 
-Отправляя номер телефона, вы соглашаетесь
-на обработку персональных данных.
+Отправляя номер телефона через данного бота,
+вы даете согласие на обработку персональных данных.
 
 Собираемые данные:
-
 • имя
 • номер телефона
 • username Telegram
 
 Цель:
-
 • связь с клиентом
 • оформление заявки
-
-Нажимая «Согласен» вы принимаете условия.
 """
 
     keyboard = InlineKeyboardMarkup([
@@ -65,6 +77,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ])
 
     await update.message.reply_text(text, reply_markup=keyboard)
+
 
 # ---------- AGREEMENT ----------
 
@@ -84,9 +97,10 @@ async def agree(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     await query.message.reply_text(
-        "Нажмите кнопку ниже чтобы отправить номер",
+        "Нажмите кнопку чтобы отправить номер",
         reply_markup=keyboard
     )
+
 
 # ---------- CONTACT ----------
 
@@ -95,10 +109,12 @@ async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     contact = update.message.contact
     user = update.message.from_user
 
+    username = user.username if user.username else "нет"
+
     text = (
         "🔥 Новая заявка\n\n"
         f"Имя: {contact.first_name}\n"
-        f"Username: @{user.username}\n"
+        f"Username: @{username}\n"
         f"Телефон: {contact.phone_number}\n"
         f"ID: {user.id}"
     )
@@ -112,9 +128,10 @@ async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Спасибо! Мы скоро свяжемся с вами."
     )
 
+
 # ---------- AUTOPOST ----------
 
-async def autopost(app):
+async def autopost(bot):
 
     await asyncio.sleep(60)
 
@@ -125,12 +142,8 @@ async def autopost(app):
             images = []
 
             for file in os.listdir(PRODUCT_FOLDER):
-
                 if file.endswith(".jpg") or file.endswith(".png"):
-
-                    images.append(
-                        os.path.join(PRODUCT_FOLDER, file)
-                    )
+                    images.append(os.path.join(PRODUCT_FOLDER, file))
 
             images.sort()
 
@@ -139,7 +152,6 @@ async def autopost(app):
                 "r",
                 encoding="utf-8"
             ) as f:
-
                 caption = f.read()
 
             media = []
@@ -147,23 +159,20 @@ async def autopost(app):
             for i, img in enumerate(images):
 
                 if i == 0:
-
                     media.append(
                         InputMediaPhoto(
                             media=open(img, "rb"),
                             caption=caption
                         )
                     )
-
                 else:
-
                     media.append(
                         InputMediaPhoto(
                             media=open(img, "rb")
                         )
                     )
 
-            await app.bot.send_media_group(
+            await bot.send_media_group(
                 chat_id=CHANNEL_ID,
                 media=media
             )
@@ -171,7 +180,6 @@ async def autopost(app):
             print("POSTED SUCCESS")
 
         except Exception as e:
-
             print("POST ERROR:", e)
 
         delay = POST_INTERVAL + random.randint(
@@ -181,33 +189,40 @@ async def autopost(app):
 
         await asyncio.sleep(delay)
 
+
 # ---------- MAIN ----------
 
 async def main():
 
-    app = (
+    application = (
         ApplicationBuilder()
         .token(TOKEN)
+        .connect_timeout(30)
+        .read_timeout(30)
+        .write_timeout(30)
         .build()
     )
 
-    app.add_handler(CommandHandler("start", start))
-
-    app.add_handler(
-        CallbackQueryHandler(agree, pattern="agree")
-    )
-
-    app.add_handler(
-        MessageHandler(filters.CONTACT, contact_handler)
-    )
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CallbackQueryHandler(agree, pattern="agree"))
+    application.add_handler(MessageHandler(filters.CONTACT, contact_handler))
 
     asyncio.create_task(
-        autopost(app)
+        autopost(application.bot)
     )
 
     print("BOT STARTED")
 
-    await app.run_polling()
+    await application.run_polling(
+        allowed_updates=Update.ALL_TYPES,
+        drop_pending_updates=True
+    )
+
+
+# ---------- RUN ----------
 
 if __name__ == "__main__":
+
+    Thread(target=run_web).start()
+
     asyncio.run(main())
