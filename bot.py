@@ -9,17 +9,18 @@ from telegram.ext import Application, CommandHandler, MessageHandler, ContextTyp
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = 1584040288
 
-PHOTO1 = "products/01_Maxihod_Sani/1.jpg"
-PHOTO2 = "products/01_Maxihod_Sani/2.jpg"
-DESCRIPTION = "products/01_Maxihod_Sani/description.txt"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+PHOTO1 = os.path.join(BASE_DIR, "products/01_Maxihod_Sani/1.jpg")
+PHOTO2 = os.path.join(BASE_DIR, "products/01_Maxihod_Sani/2.jpg")
+DESCRIPTION = os.path.join(BASE_DIR, "products/01_Maxihod_Sani/description.txt")
 
 
-# =========================
-# WEB SERVER (для Render)
-# =========================
+# ======================
+# HTTP SERVER ДЛЯ RENDER
+# ======================
 
 class Handler(BaseHTTPRequestHandler):
-
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
@@ -32,27 +33,9 @@ def run_web():
     server.serve_forever()
 
 
-# =========================
-# ЧТЕНИЕ ОПИСАНИЯ
-# =========================
-
-def get_description():
-
-    try:
-        base = os.path.dirname(os.path.abspath(__file__))
-        path = os.path.join(base, DESCRIPTION)
-
-        with open(path, "r", encoding="utf-8") as f:
-            return f.read()
-
-    except Exception as e:
-        print("DESCRIPTION ERROR:", e)
-        return "Описание товара временно недоступно"
-
-
-# =========================
+# ======================
 # START
-# =========================
+# ======================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -61,7 +44,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
 
-        text = get_description()
+        with open(DESCRIPTION, "r", encoding="utf-8") as f:
+            text = f.read()
 
         with open(PHOTO1, "rb") as p1:
             await update.message.reply_photo(photo=p1)
@@ -76,17 +60,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
 
-        print("PHOTO ERROR:", e)
+        print("ERROR:", e)
 
         await update.message.reply_text(
-            "Ошибка загрузки фото товара",
+            "Ошибка загрузки товара",
             reply_markup=reply_markup
         )
 
 
-# =========================
+# ======================
 # СОГЛАСИЕ
-# =========================
+# ======================
 
 async def consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -95,7 +79,7 @@ async def consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 Нажимая кнопку "Согласен", вы разрешаете
 обработку вашего номера телефона для связи
-по вашей заявке.
+по заявке.
 
 Данные используются только для связи.
 """
@@ -108,9 +92,9 @@ async def consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# =========================
+# ======================
 # ЗАПРОС ТЕЛЕФОНА
-# =========================
+# ======================
 
 async def ask_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -122,9 +106,9 @@ async def ask_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# =========================
+# ======================
 # ПОЛУЧЕНИЕ КОНТАКТА
-# =========================
+# ======================
 
 async def get_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -152,9 +136,9 @@ ID: {user.id}
     )
 
 
-# =========================
+# ======================
 # MAIN
-# =========================
+# ======================
 
 def main():
 
