@@ -1,10 +1,10 @@
-
 import os
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+
 
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = 1584040288
@@ -14,9 +14,9 @@ PHOTO2 = "products/01_Maxihod_Sani/2.jpg"
 DESCRIPTION = "products/01_Maxihod_Sani/description.txt"
 
 
-# -----------------------------
-# HTTP SERVER ДЛЯ RENDER
-# -----------------------------
+# =========================
+# WEB SERVER (для Render)
+# =========================
 
 class Handler(BaseHTTPRequestHandler):
 
@@ -32,9 +32,27 @@ def run_web():
     server.serve_forever()
 
 
-# -----------------------------
+# =========================
+# ЧТЕНИЕ ОПИСАНИЯ
+# =========================
+
+def get_description():
+
+    try:
+        base = os.path.dirname(os.path.abspath(__file__))
+        path = os.path.join(base, DESCRIPTION)
+
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+
+    except Exception as e:
+        print("DESCRIPTION ERROR:", e)
+        return "Описание товара временно недоступно"
+
+
+# =========================
 # START
-# -----------------------------
+# =========================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -43,34 +61,32 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
 
-        text = open(DESCRIPTION, encoding="utf-8").read()
-
-        # ограничение Telegram
-        text = text[:1000]
+        text = get_description()
 
         with open(PHOTO1, "rb") as p1:
-            await update.message.reply_photo(
-                photo=p1,
-                caption=text,
-                reply_markup=reply_markup
-            )
+            await update.message.reply_photo(photo=p1)
 
         with open(PHOTO2, "rb") as p2:
             await update.message.reply_photo(photo=p2)
-
-    except Exception as e:
-
-        print("PHOTO ERROR:", e)
 
         await update.message.reply_text(
             text,
             reply_markup=reply_markup
         )
 
+    except Exception as e:
 
-# -----------------------------
+        print("PHOTO ERROR:", e)
+
+        await update.message.reply_text(
+            "Ошибка загрузки фото товара",
+            reply_markup=reply_markup
+        )
+
+
+# =========================
 # СОГЛАСИЕ
-# -----------------------------
+# =========================
 
 async def consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -92,9 +108,9 @@ async def consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# -----------------------------
-# ТЕЛЕФОН
-# -----------------------------
+# =========================
+# ЗАПРОС ТЕЛЕФОНА
+# =========================
 
 async def ask_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -106,9 +122,9 @@ async def ask_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# -----------------------------
-# ПОЛУЧЕНИЕ ЗАЯВКИ
-# -----------------------------
+# =========================
+# ПОЛУЧЕНИЕ КОНТАКТА
+# =========================
 
 async def get_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -136,9 +152,9 @@ ID: {user.id}
     )
 
 
-# -----------------------------
+# =========================
 # MAIN
-# -----------------------------
+# =========================
 
 def main():
 
@@ -162,8 +178,6 @@ def main():
 
     application.run_polling()
 
-
-# -----------------------------
 
 if __name__ == "__main__":
 
