@@ -1,183 +1,266 @@
+import os
+import json
+import random
+import asyncio
 import logging
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-
-from flask import Flask
 from threading import Thread
 
+from flask import Flask
+
 from telegram import (
-    Update,
-    KeyboardButton,
-    ReplyKeyboardMarkup,
-    InputMediaPhoto
+Update,
+KeyboardButton,
+ReplyKeyboardMarkup,
+InputMediaPhoto
 )
 
 from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters
+Application,
+CommandHandler,
+MessageHandler,
+ContextTypes,
+filters
 )
 
-TOKEN = "YOUR_BOT_TOKEN"
-ADMIN_ID = 123456789
+# ----------------
+# CONFIG
+# ----------------
 
-PHOTO1 = "photo1.jpg"
-PHOTO2 = "photo2.jpg"
+with open("config.json","r",encoding="utf8") as f:
+ config=json.load(f)
 
-# ==============================
-# GOOGLE SHEETS
-# ==============================
+TOKEN=config["TOKEN"]
+ADMIN_ID=config["ADMIN_ID"]
+CHANNEL_ID=config["CHANNEL_ID"]
 
-scope = [
-    "https://spreadsheets.google.com/feeds",
-    "https://www.googleapis.com/auth/drive"
-]
+AUTOPUBLISH=config["AUTOPUBLISH"]
+POST_INTERVAL=config["POST_INTERVAL"]
 
-creds = ServiceAccountCredentials.from_json_keyfile_name(
-    "credentials.json", scope
+# ----------------
+# LOGGING
+# ----------------
+
+logging.basicConfig(
+format="%(asctime)s %(levelname)s %(message)s",
+level=logging.INFO
 )
 
-client = gspread.authorize(creds)
+# ----------------
+# KEEP ALIVE
+# ----------------
 
-sheet = client.open("batrak_leads").sheet1
+app=Flask("")
 
-# ==============================
-# WEB SERVER (для Render)
-# ==============================
-
-app = Flask('')
-
-
-@app.route('/')
+@app.route("/")
 def home():
-    return "bot is running"
-
+ return "bot running"
 
 def run():
-    app.run(host='0.0.0.0', port=10000)
-
+ app.run(host="0.0.0.0",port=10000)
 
 def keep_alive():
-    t = Thread(target=run)
-    t.start()
+ t=Thread(target=run)
+ t.start()
 
+# ----------------
+# ADMIN ALERT
+# ----------------
 
-# ==============================
+async def admin_alert(app,text):
+
+ try:
+  await app.bot.send_message(
+  ADMIN_ID,
+  "⚠️ "+text
+  )
+ except:
+  pass
+
+# ----------------
 # START
-# ==============================
+# ----------------
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(update:Update,context:ContextTypes.DEFAULT_TYPE):
 
-    try:
+ try:
 
-        media = [
-            InputMediaPhoto(open(PHOTO1, "rb")),
-            InputMediaPhoto(open(PHOTO2, "rb"))
-        ]
+  media=[
+  InputMediaPhoto(open("products/01_Maxihod_Sani/1.jpg","rb")),
+  InputMediaPhoto(open("products/01_Maxihod_Sani/2.jpg","rb"))
+  ]
 
-        await update.message.reply_media_group(media)
+  await update.message.reply_media_group(media)
 
-        await update.message.reply_text(
-            "САНИ – ВОЛОКУШИ МАКСИХОД"
-        )
+ except Exception as e:
 
-        await update.message.reply_text(
-            """Свяжитесь с нами или оставьте номер телефона 📱
+  await admin_alert(
+  context.application,
+  "Фото ошибка "+str(e)
+  )
 
-Контакты:
+ try:
 
-Компания МАКСИХОД  
-г. Нижневартовск  
-ул. Интернациональная 60
+  with open(
+  "products/01_Maxihod_Sani/description.txt",
+  "r",
+  encoding="utf8"
+  ) as f:
 
-📞 +7 922 447 40 86
-📧 MaxihodNV86@yandex.ru
-"""
-        )
+   text=f.read()
 
-        await update.message.reply_text(
-            """👇 Нажимая кнопку ниже вы соглашаетесь  
-с обработкой персональных данных."""
-        )
+  await update.message.reply_text(text)
 
-        keyboard = [
-            [KeyboardButton("📞 Оставить контакт", request_contact=True)]
-        ]
+ except Exception as e:
 
-        markup = ReplyKeyboardMarkup(
-            keyboard,
-            resize_keyboard=True
-        )
+  await admin_alert(
+  context.application,
+  "Description ошибка "+str(e)
+  )
 
-        await update.message.reply_text(
-            "Нажмите кнопку ниже чтобы оставить контакт",
-            reply_markup=markup
-        )
+ keyboard=[
+ [KeyboardButton(
+ "📞 Оставить контакт",
+ request_contact=True)]
+ ]
 
-    except Exception as e:
-        print("START ERROR:", e)
+ markup=ReplyKeyboardMarkup(
+ keyboard,
+ resize_keyboard=True
+ )
 
+ await update.message.reply_text(
+ "👇 Нажмите кнопку чтобы оставить заявку",
+ reply_markup=markup
+ )
 
-# ==============================
-# ПОЛУЧЕНИЕ КОНТАКТА
-# ==============================
+# ----------------
+# CONTACT
+# ----------------
 
-async def contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def contact(update:Update,context:ContextTypes.DEFAULT_TYPE):
 
-    contact = update.message.contact
+ try:
 
-    name = contact.first_name
-    phone = contact.phone_number
-    user_id = update.effective_user.id
-    username = update.effective_user.username
+  c=update.message.contact
+  u=update.effective_user
 
-    text = f"""
+  text=f"""
 🔥 Новая заявка
 
-Имя: {name}
-Username: @{username}
-Телефон: {phone}
-ID: {user_id}
+Имя: {c.first_name}
+Username: @{u.username}
+Телефон: {c.phone_number}
+ID: {u.id}
 """
 
-    # отправка админу
-    await context.bot.send_message(ADMIN_ID, text)
+  await context.bot.send_message(
+  ADMIN_ID,
+  text
+  )
 
-    # запись в Google Sheets
-    sheet.append_row([
-        name,
-        phone,
-        username,
-        user_id
-    ])
+  await update.message.reply_text(
+  "Спасибо! Мы свяжемся с вами."
+  )
 
-    await update.message.reply_text(
-        "Спасибо! Мы скоро свяжемся с вами."
+ except Exception as e:
+
+  await admin_alert(
+  context.application,
+  "Ошибка контакта "+str(e)
+  )
+
+# ----------------
+# AUTOPOST
+# ----------------
+
+async def autopost(context:ContextTypes.DEFAULT_TYPE):
+
+ try:
+
+  products=os.listdir("products")
+
+  if not products:
+   return
+
+  product=random.choice(products)
+
+  path=f"products/{product}"
+
+  photos=[]
+
+  for file in os.listdir(path):
+
+   if file.endswith(".jpg"):
+    photos.append(
+     InputMediaPhoto(
+     open(f"{path}/{file}","rb")
+     )
     )
 
+  with open(
+  f"{path}/description.txt",
+  "r",
+  encoding="utf8"
+  ) as f:
 
-# ==============================
+   text=f.read()
+
+  await context.bot.send_media_group(
+  CHANNEL_ID,
+  photos
+  )
+
+  await context.bot.send_message(
+  CHANNEL_ID,
+  text
+  )
+
+ except Exception as e:
+
+  await admin_alert(
+  context.application,
+  "Ошибка автопоста "+str(e)
+  )
+
+# ----------------
 # MAIN
-# ==============================
+# ----------------
+
+async def autopost_loop(app):
+
+ await asyncio.sleep(120)
+
+ while True:
+
+  await autopost(app)
+
+  delay=POST_INTERVAL+random.randint(300,1200)
+
+  await asyncio.sleep(delay)
 
 def main():
 
-    keep_alive()
+ keep_alive()
 
-    application = Application.builder().token(TOKEN).build()
+ application=Application.builder().token(TOKEN).build()
 
-    application.add_handler(CommandHandler("start", start))
+ application.add_handler(
+ CommandHandler("start",start)
+ )
 
-    application.add_handler(
-        MessageHandler(filters.CONTACT, contact)
-    )
+ application.add_handler(
+ MessageHandler(filters.CONTACT,contact)
+ )
 
-    print("BOT STARTED")
+ if AUTOPUBLISH:
 
-    application.run_polling()
+  asyncio.create_task(
+  autopost_loop(application)
+  )
 
+ print("BOT STARTED")
 
-if __name__ == "__main__":
-    main()
+ application.run_polling()
+
+if __name__=="__main__":
+ main()
