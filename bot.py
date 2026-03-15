@@ -1,11 +1,15 @@
-import os
-import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import logging
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+
+from flask import Flask
+from threading import Thread
 
 from telegram import (
     Update,
+    KeyboardButton,
     ReplyKeyboardMarkup,
-    KeyboardButton
+    InputMediaPhoto
 )
 
 from telegram.ext import (
@@ -16,136 +20,164 @@ from telegram.ext import (
     filters
 )
 
-# =========================
-# НАСТРОЙКИ
-# =========================
+TOKEN = "YOUR_BOT_TOKEN"
+ADMIN_ID = 123456789
 
-TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = 1584040288
+PHOTO1 = "photo1.jpg"
+PHOTO2 = "photo2.jpg"
 
-PHOTO1 = "products/01_Maxihod_Sani/1.jpg"
-PHOTO2 = "products/01_Maxihod_Sani/2.jpg"
-DESCRIPTION = "products/01_Maxihod_Sani/description.txt"
+# ==============================
+# GOOGLE SHEETS
+# ==============================
 
+scope = [
+    "https://spreadsheets.google.com/feeds",
+    "https://www.googleapis.com/auth/drive"
+]
 
-# =========================
+creds = ServiceAccountCredentials.from_json_keyfile_name(
+    "credentials.json", scope
+)
+
+client = gspread.authorize(creds)
+
+sheet = client.open("batrak_leads").sheet1
+
+# ==============================
 # WEB SERVER (для Render)
-# =========================
+# ==============================
 
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Bot is running")
+app = Flask('')
 
 
-def run_web():
-    port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(("", port), Handler)
-    print("WEB SERVER STARTED")
-    server.serve_forever()
+@app.route('/')
+def home():
+    return "bot is running"
 
 
-# =========================
-# /start
-# =========================
+def run():
+    app.run(host='0.0.0.0', port=10000)
+
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
+
+
+# ==============================
+# START
+# ==============================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
 
-        with open(DESCRIPTION, "r", encoding="utf-8") as f:
-            text = f.read()
+        media = [
+            InputMediaPhoto(open(PHOTO1, "rb")),
+            InputMediaPhoto(open(PHOTO2, "rb"))
+        ]
 
-        # фото 1
-        with open(PHOTO1, "rb") as p1:
-            await update.message.reply_photo(photo=p1)
-
-        # фото 2
-        with open(PHOTO2, "rb") as p2:
-            await update.message.reply_photo(photo=p2)
-
-        # описание отдельно (чтобы не было ошибки caption)
-        await update.message.reply_text(text)
-
-        keyboard = [[KeyboardButton("📞 Оставить контакт", request_contact=True)]]
+        await update.message.reply_media_group(media)
 
         await update.message.reply_text(
-            "👇 Нажмите кнопку ниже чтобы оставить заявку",
-            reply_markup=ReplyKeyboardMarkup(
-                keyboard,
-                resize_keyboard=True
-            )
+            "САНИ – ВОЛОКУШИ МАКСИХОД"
+        )
+
+        await update.message.reply_text(
+            """Свяжитесь с нами или оставьте номер телефона 📱
+
+Контакты:
+
+Компания МАКСИХОД  
+г. Нижневартовск  
+ул. Интернациональная 60
+
+📞 +7 922 447 40 86
+📧 MaxihodNV86@yandex.ru
+"""
+        )
+
+        await update.message.reply_text(
+            """👇 Нажимая кнопку ниже вы соглашаетесь  
+с обработкой персональных данных."""
+        )
+
+        keyboard = [
+            [KeyboardButton("📞 Оставить контакт", request_contact=True)]
+        ]
+
+        markup = ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True
+        )
+
+        await update.message.reply_text(
+            "Нажмите кнопку ниже чтобы оставить заявку",
+            reply_markup=markup
         )
 
     except Exception as e:
-
         print("START ERROR:", e)
 
-        await update.message.reply_text(
-            "Ошибка загрузки товара"
-        )
 
-
-# =========================
+# ==============================
 # ПОЛУЧЕНИЕ КОНТАКТА
-# =========================
+# ==============================
 
-async def get_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     contact = update.message.contact
-    user = update.message.from_user
 
-    username = user.username if user.username else "нет"
+    name = contact.first_name
+    phone = contact.phone_number
+    user_id = update.effective_user.id
+    username = update.effective_user.username
 
     text = f"""
 🔥 Новая заявка
 
-Имя: {contact.first_name}
+Имя: {name}
 Username: @{username}
-Телефон: {contact.phone_number}
-ID: {user.id}
+Телефон: {phone}
+ID: {user_id}
 """
 
-    await context.bot.send_message(
-        chat_id=ADMIN_ID,
-        text=text
-    )
+    # отправка админу
+    await context.bot.send_message(ADMIN_ID, text)
+
+    # запись в Google Sheets
+    sheet.append_row([
+        name,
+        phone,
+        username,
+        user_id
+    ])
 
     await update.message.reply_text(
         "Спасибо! Мы скоро свяжемся с вами."
     )
 
 
-# =========================
+# ==============================
 # MAIN
-# =========================
+# ==============================
 
 def main():
 
-    print("BOT STARTING...")
+    keep_alive()
 
     application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
 
     application.add_handler(
-        MessageHandler(filters.CONTACT, get_contact)
+        MessageHandler(filters.CONTACT, contact)
     )
 
     print("BOT STARTED")
 
-    application.run_polling(
-        drop_pending_updates=True
-    )
+    application.run_polling()
 
-
-# =========================
-# ЗАПУСК
-# =========================
 
 if __name__ == "__main__":
-
-    threading.Thread(target=run_web).start()
-
     main()
