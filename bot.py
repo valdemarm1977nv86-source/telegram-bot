@@ -2,8 +2,20 @@ import os
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram import (
+    Update,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+    InputMediaPhoto
+)
+
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters
+)
 
 
 TOKEN = os.getenv("BOT_TOKEN")
@@ -21,6 +33,7 @@ DESCRIPTION = os.path.join(BASE_DIR, "products/01_Maxihod_Sani/description.txt")
 # ======================
 
 class Handler(BaseHTTPRequestHandler):
+
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
@@ -47,14 +60,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with open(DESCRIPTION, "r", encoding="utf-8") as f:
             text = f.read()
 
-        with open(PHOTO1, "rb") as p1:
-            await update.message.reply_photo(photo=p1)
+        media = [
+            InputMediaPhoto(
+                media=open(PHOTO1, "rb"),
+                caption=text[:1000]   # лимит Telegram
+            ),
+            InputMediaPhoto(
+                media=open(PHOTO2, "rb")
+            )
+        ]
 
-        with open(PHOTO2, "rb") as p2:
-            await update.message.reply_photo(photo=p2)
+        await update.message.reply_media_group(media)
 
         await update.message.reply_text(
-            text,
+            "👇 Нажмите кнопку ниже чтобы оставить заявку",
             reply_markup=reply_markup
         )
 
@@ -93,7 +112,7 @@ async def consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ======================
-# ЗАПРОС ТЕЛЕФОНА
+# ТЕЛЕФОН
 # ======================
 
 async def ask_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -107,7 +126,7 @@ async def ask_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ======================
-# ПОЛУЧЕНИЕ КОНТАКТА
+# ЗАЯВКА
 # ======================
 
 async def get_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
