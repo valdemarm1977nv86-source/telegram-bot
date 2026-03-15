@@ -21,19 +21,17 @@ from telegram.ext import (
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = 1584040288
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-PHOTO1 = os.path.join(BASE_DIR, "products/01_Maxihod_Sani/1.jpg")
-PHOTO2 = os.path.join(BASE_DIR, "products/01_Maxihod_Sani/2.jpg")
-DESCRIPTION = os.path.join(BASE_DIR, "products/01_Maxihod_Sani/description.txt")
+PHOTO1 = "products/01_Maxihod_Sani/1.jpg"
+PHOTO2 = "products/01_Maxihod_Sani/2.jpg"
+DESCRIPTION = "products/01_Maxihod_Sani/description.txt"
 
 
-# ======================
-# HTTP SERVER ДЛЯ RENDER
-# ======================
+# =========================
+# WEB SERVER (для Render)
+# =========================
 
 class Handler(BaseHTTPRequestHandler):
-
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
@@ -46,88 +44,70 @@ def run_web():
     server.serve_forever()
 
 
-# ======================
-# START
-# ======================
+# =========================
+# СТАРТ
+# =========================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    keyboard = [[KeyboardButton("🛒 Оставить заявку")]]
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    with open(DESCRIPTION, "r", encoding="utf-8") as f:
+        text = f.read()
 
-    try:
+    media = [
+        InputMediaPhoto(open(PHOTO1, "rb"), caption=text),
+        InputMediaPhoto(open(PHOTO2, "rb"))
+    ]
 
-        with open(DESCRIPTION, "r", encoding="utf-8") as f:
-            text = f.read()
+    await update.message.reply_media_group(media)
 
-        media = [
-            InputMediaPhoto(
-                media=open(PHOTO1, "rb"),
-                caption=text[:1000]   # лимит Telegram
-            ),
-            InputMediaPhoto(
-                media=open(PHOTO2, "rb")
-            )
-        ]
+    keyboard = [[KeyboardButton("📞 Оставить контакт")]]
 
-        await update.message.reply_media_group(media)
-
-        await update.message.reply_text(
-            "👇 Нажмите кнопку ниже чтобы оставить заявку",
-            reply_markup=reply_markup
+    await update.message.reply_text(
+        "👇 Нажмите кнопку ниже чтобы оставить контакт",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True
         )
-
-    except Exception as e:
-
-        print("ERROR:", e)
-
-        await update.message.reply_text(
-            "Ошибка загрузки товара",
-            reply_markup=reply_markup
-        )
+    )
 
 
-# ======================
+# =========================
 # СОГЛАСИЕ
-# ======================
+# =========================
 
 async def consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = """
 📄 Согласие на обработку персональных данных
 
-Нажимая кнопку "Согласен", вы разрешаете
-обработку вашего номера телефона для связи
-по заявке.
+Нажимая кнопку ниже, вы соглашаетесь
+на обработку вашего номера телефона
+для связи по заявке.
 
-Данные используются только для связи.
+Ваш номер используется только
+для обратного звонка.
 """
 
-    keyboard = [[KeyboardButton("✅ Согласен")]]
+    keyboard = [[
+        KeyboardButton(
+            "📱 Поделиться номером",
+            request_contact=True
+        )
+    ]]
 
     await update.message.reply_text(
         text,
-        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True,
+            one_time_keyboard=True
+        )
     )
 
 
-# ======================
-# ТЕЛЕФОН
-# ======================
-
-async def ask_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    keyboard = [[KeyboardButton("📱 Поделиться номером", request_contact=True)]]
-
-    await update.message.reply_text(
-        "Нажмите кнопку чтобы отправить номер телефона",
-        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    )
-
-
-# ======================
-# ЗАЯВКА
-# ======================
+# =========================
+# ПОЛУЧЕНИЕ ТЕЛЕФОНА
+# =========================
 
 async def get_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -151,13 +131,13 @@ ID: {user.id}
     )
 
     await update.message.reply_text(
-        "Спасибо! Мы скоро свяжемся с вами."
+        "✅ Спасибо! Мы скоро свяжемся с вами."
     )
 
 
-# ======================
+# =========================
 # MAIN
-# ======================
+# =========================
 
 def main():
 
@@ -166,11 +146,10 @@ def main():
     application.add_handler(CommandHandler("start", start))
 
     application.add_handler(
-        MessageHandler(filters.TEXT & filters.Regex("Оставить"), consent)
-    )
-
-    application.add_handler(
-        MessageHandler(filters.TEXT & filters.Regex("Согласен"), ask_phone)
+        MessageHandler(
+            filters.TEXT & filters.Regex("Оставить контакт"),
+            consent
+        )
     )
 
     application.add_handler(
