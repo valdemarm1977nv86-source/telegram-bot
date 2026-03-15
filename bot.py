@@ -1,7 +1,7 @@
 import os
 import json
-import asyncio
 import random
+import asyncio
 from threading import Thread
 from flask import Flask
 
@@ -23,17 +23,16 @@ from telegram.ext import (
     filters
 )
 
-# ---------- FLASK SERVER ----------
+# ---------- FLASK ----------
 
-app = Flask(__name__)
+web = Flask(__name__)
 
-@app.route('/')
+@web.route("/")
 def home():
     return "Bot is alive"
 
-
 def run_web():
-    app.run(host="0.0.0.0", port=8080)
+    web.run(host="0.0.0.0", port=8080)
 
 
 # ---------- CONFIG ----------
@@ -59,17 +58,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = """
 📄 Политика обработки персональных данных
 
-Отправляя номер телефона через данного бота,
-вы даете согласие на обработку персональных данных.
+Отправляя номер телефона через бота,
+вы соглашаетесь на обработку персональных данных.
 
 Собираемые данные:
 • имя
 • номер телефона
 • username Telegram
-
-Цель:
-• связь с клиентом
-• оформление заявки
 """
 
     keyboard = InlineKeyboardMarkup([
@@ -131,68 +126,57 @@ async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------- AUTOPOST ----------
 
-async def autopost(bot):
+async def autopost(context: ContextTypes.DEFAULT_TYPE):
 
-    await asyncio.sleep(60)
+    try:
 
-    while True:
+        images = []
 
-        try:
+        for file in os.listdir(PRODUCT_FOLDER):
+            if file.endswith(".jpg") or file.endswith(".png"):
+                images.append(os.path.join(PRODUCT_FOLDER, file))
 
-            images = []
+        images.sort()
 
-            for file in os.listdir(PRODUCT_FOLDER):
-                if file.endswith(".jpg") or file.endswith(".png"):
-                    images.append(os.path.join(PRODUCT_FOLDER, file))
+        with open(
+            f"{PRODUCT_FOLDER}/description.txt",
+            "r",
+            encoding="utf-8"
+        ) as f:
+            caption = f.read()
 
-            images.sort()
+        media = []
 
-            with open(
-                f"{PRODUCT_FOLDER}/description.txt",
-                "r",
-                encoding="utf-8"
-            ) as f:
-                caption = f.read()
+        for i, img in enumerate(images):
 
-            media = []
-
-            for i, img in enumerate(images):
-
-                if i == 0:
-                    media.append(
-                        InputMediaPhoto(
-                            media=open(img, "rb"),
-                            caption=caption
-                        )
+            if i == 0:
+                media.append(
+                    InputMediaPhoto(
+                        media=open(img, "rb"),
+                        caption=caption
                     )
-                else:
-                    media.append(
-                        InputMediaPhoto(
-                            media=open(img, "rb")
-                        )
+                )
+            else:
+                media.append(
+                    InputMediaPhoto(
+                        media=open(img, "rb")
                     )
+                )
 
-            await bot.send_media_group(
-                chat_id=CHANNEL_ID,
-                media=media
-            )
-
-            print("POSTED SUCCESS")
-
-        except Exception as e:
-            print("POST ERROR:", e)
-
-        delay = POST_INTERVAL + random.randint(
-            RANDOM_DELAY_MIN,
-            RANDOM_DELAY_MAX
+        await context.bot.send_media_group(
+            chat_id=CHANNEL_ID,
+            media=media
         )
 
-        await asyncio.sleep(delay)
+        print("POSTED SUCCESS")
+
+    except Exception as e:
+        print("POST ERROR:", e)
 
 
 # ---------- MAIN ----------
 
-async def main():
+def main():
 
     application = (
         ApplicationBuilder()
@@ -207,13 +191,21 @@ async def main():
     application.add_handler(CallbackQueryHandler(agree, pattern="agree"))
     application.add_handler(MessageHandler(filters.CONTACT, contact_handler))
 
-    asyncio.create_task(
-        autopost(application.bot)
+    # автопостинг
+    interval = POST_INTERVAL + random.randint(
+        RANDOM_DELAY_MIN,
+        RANDOM_DELAY_MAX
+    )
+
+    application.job_queue.run_repeating(
+        autopost,
+        interval=interval,
+        first=60
     )
 
     print("BOT STARTED")
 
-    await application.run_polling(
+    application.run_polling(
         allowed_updates=Update.ALL_TYPES,
         drop_pending_updates=True
     )
@@ -225,4 +217,4 @@ if __name__ == "__main__":
 
     Thread(target=run_web).start()
 
-    asyncio.run(main())
+    main()
