@@ -1,10 +1,6 @@
 import os
 import json
 import random
-import asyncio
-from threading import Thread
-from flask import Flask
-
 from telegram import (
     Update,
     KeyboardButton,
@@ -23,18 +19,6 @@ from telegram.ext import (
     filters
 )
 
-# ---------- FLASK ----------
-
-web = Flask(__name__)
-
-@web.route("/")
-def home():
-    return "Bot is alive"
-
-def run_web():
-    web.run(host="0.0.0.0", port=8080)
-
-
 # ---------- CONFIG ----------
 
 with open("config.json", "r", encoding="utf-8") as f:
@@ -49,7 +33,6 @@ RANDOM_DELAY_MIN = config["RANDOM_DELAY_MIN"]
 RANDOM_DELAY_MAX = config["RANDOM_DELAY_MAX"]
 
 PRODUCT_FOLDER = "products/01_Maxihod_Sani"
-
 
 # ---------- START ----------
 
@@ -103,7 +86,6 @@ async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     contact = update.message.contact
     user = update.message.from_user
-
     username = user.username if user.username else "нет"
 
     text = (
@@ -178,20 +160,12 @@ async def autopost(context: ContextTypes.DEFAULT_TYPE):
 
 def main():
 
-    application = (
-        ApplicationBuilder()
-        .token(TOKEN)
-        .connect_timeout(30)
-        .read_timeout(30)
-        .write_timeout(30)
-        .build()
-    )
+    application = ApplicationBuilder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(agree, pattern="agree"))
     application.add_handler(MessageHandler(filters.CONTACT, contact_handler))
 
-    # автопостинг
     interval = POST_INTERVAL + random.randint(
         RANDOM_DELAY_MIN,
         RANDOM_DELAY_MAX
@@ -205,16 +179,8 @@ def main():
 
     print("BOT STARTED")
 
-    application.run_polling(
-        allowed_updates=Update.ALL_TYPES,
-        drop_pending_updates=True
-    )
+    application.run_polling()
 
-
-# ---------- RUN ----------
 
 if __name__ == "__main__":
-
-    Thread(target=run_web).start()
-
     main()
